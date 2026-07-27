@@ -1,0 +1,42 @@
+--- src/components/WorkspaceView.tsx
++++ src/components/WorkspaceView.tsx
+@@ -11,7 +11,7 @@
+ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace }: Props) {
+   const [workspaceData, setWorkspaceData] = useState<{statuses: Status[], workItems: WorkItem[]} | null>(null);
+   const [loading, setLoading] = useState(true);
+-  const [activeTab, setActiveTab] = useState<'board' | 'list'>('board');
++  const [activeTab, setActiveTab] = useState<'kanban' | 'scrum' | 'waterfall' | 'list'>('kanban');
+   
+   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
+   const [newTaskTitle, setNewTaskTitle] = useState("");
+@@ -104,10 +104,18 @@
+           </div>
+           <div className="mt-6 flex gap-6">
+             <button 
+-              onClick={() => setActiveTab('board')}
+-              className={`text-sm font-medium pb-3 px-1 transition-colors ${activeTab === 'board' ? 'text-brand-orange border-b-2 border-brand-orange' : 'text-gray-500 hover:text-brand-text'}`}
+-            >Tampilan Papan</button>
++              onClick={() => setActiveTab('kanban')}
++              className={`text-sm font-medium pb-3 px-1 transition-colors ${activeTab === 'kanban' ? 'text-brand-orange border-b-2 border-brand-orange' : 'text-gray-500 hover:text-brand-text'}`}
++            >Kanban</button>
+             <button 
++              onClick={() => setActiveTab('scrum')}
++              className={`text-sm font-medium pb-3 px-1 transition-colors ${activeTab === 'scrum' ? 'text-brand-orange border-b-2 border-brand-orange' : 'text-gray-500 hover:text-brand-text'}`}
++            >Scrum</button>
++            <button 
++              onClick={() => setActiveTab('waterfall')}
++              className={`text-sm font-medium pb-3 px-1 transition-colors ${activeTab === 'waterfall' ? 'text-brand-orange border-b-2 border-brand-orange' : 'text-gray-500 hover:text-brand-text'}`}
++            >Waterfall</button>
++            <button 
+               onClick={() => setActiveTab('list')}
+               className={`text-sm font-medium pb-3 px-1 transition-colors ${activeTab === 'list' ? 'text-brand-orange border-b-2 border-brand-orange' : 'text-gray-500 hover:text-brand-text'}`}
+             >Tampilan Daftar</button>
+@@ -115,7 +123,7 @@
+        </div>
+ 
+        <div className="flex-1 overflow-auto p-6 bg-brand-bg h-full relative">
+-         {activeTab === 'board' ? (
++         {activeTab === 'kanban' ? (
+            <div className="flex gap-6 items-start h-full pb-8 w-max">
+              {workspaceData.statuses.map(status => {
+                const items = workspaceData.workItems.filter(i => i.statusId === status.id);

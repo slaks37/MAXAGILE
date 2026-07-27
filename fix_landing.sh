@@ -1,0 +1,3 @@
+sed -i 's/px-8 py-4 bg-brand-orange hover:opacity-90 text-white rounded-full font-bold text-lg shadow-lg shadow-brand-orange\/30/px-8 py-4 bg-brand-orange text-white rounded-full font-extrabold text-xl border-b-4 border-orange-600 active:border-b-0 active:translate-y-1 shadow-lg shadow-brand-orange\/20/g' src/App.tsx
+sed -i 's/px-8 py-4 bg-brand-bg hover:bg-gray-100 text-brand-text rounded-full font-bold text-lg border border-gray-200/px-8 py-4 bg-white text-gray-700 rounded-full font-extrabold text-xl border-2 border-gray-200 border-b-4 active:border-b-2 active:translate-y-1 shadow-sm/g' src/App.tsx
+sed -i 's/w-64 bg-brand-bg flex flex-col border-r border-gray-200/w-64 bg-white flex flex-col border-r-2 border-gray-100/g' src/App.tsx

@@ -1,0 +1,1 @@
+sed -i 's/bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden/bg-white\/60 backdrop-blur-md border border-white rounded-3xl shadow-sm overflow-hidden/g' src/components/WorkspaceView.tsx

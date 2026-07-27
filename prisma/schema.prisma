@@ -1,0 +1,140 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  name      String
+  role      String   @default("USER") // ADMIN, USER
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspaces WorkspaceMember[]
+  workItems  WorkItem[]        @relation("Assignee")
+  comments   Comment[]
+  activities ActivityLog[]
+}
+
+model Workspace {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  type        String   @default("Project") // Project, Department, Personal, etc.
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members   WorkspaceMember[]
+  workItems WorkItem[]
+  workflows Workflow[]
+  statuses  Status[]
+}
+
+model WorkspaceMember {
+  id          String   @id @default(uuid())
+  workspaceId String
+  userId      String
+  role        String   @default("MEMBER") // OWNER, ADMIN, MEMBER, VIEWER
+  joinedAt    DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+}
+
+model Workflow {
+  id          String   @id @default(uuid())
+  workspaceId String
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  statuses  Status[]
+}
+
+model Status {
+  id          String   @id @default(uuid())
+  workspaceId String?
+  workflowId  String?
+  name        String
+  color       String   @default("#CCCCCC")
+  order       Int      @default(0)
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workflow  Workflow?  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workItems WorkItem[]
+}
+
+model WorkItem {
+  id          String    @id @default(uuid())
+  workspaceId String
+  title       String
+  description String?
+  type        String    @default("Task") // Task, Issue, Ticket, etc.
+  priority    String    @default("Medium") // Low, Medium, High, Urgent
+  statusId    String?
+  assigneeId  String?
+  parentId    String?
+  dueDate     DateTime?
+  labels      String?
+  subtasks    String?
+  activities  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  status    Status?    @relation(fields: [statusId], references: [id])
+  assignee  User?      @relation("Assignee", fields: [assigneeId], references: [id])
+  parent    WorkItem?  @relation("SubTasks", fields: [parentId], references: [id])
+  subTasks  WorkItem[] @relation("SubTasks")
+  comments  Comment[]
+}
+
+model Comment {
+  id         String   @id @default(uuid())
+  content    String
+  workItemId String
+  authorId   String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  workItem WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  author   User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  entityId  String?
+  entity    String?
+  details   String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Course {
+  id        String   @id @default(uuid())
+  title     String
+  summary   String   @default("")
+  category  String   @default("Umum")
+  color     String   @default("from-brand-orange to-amber-400")
+  order     Int      @default(0)
+  sections  String   @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

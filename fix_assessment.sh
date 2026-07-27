@@ -1,0 +1,2 @@
+sed -i 's/text-left p-6 rounded-2xl border-2 transition-all group/text-left p-6 rounded-3xl border-2 border-b-4 transition-all group/g' src/components/learning/ReadinessAssessment.tsx
+sed -i 's/px-8 py-4 bg-gray-900 hover:bg-black text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-1/px-8 py-4 bg-brand-text hover:bg-black text-white font-extrabold rounded-3xl border-2 border-transparent border-b-4 active:border-b-0 active:translate-y-2/g' src/components/learning/ReadinessAssessment.tsx

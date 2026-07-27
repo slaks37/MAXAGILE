@@ -1,0 +1,3 @@
+sed -i 's/px-5 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap/px-6 py-3 rounded-2xl text-sm font-extrabold transition-all whitespace-nowrap/g' src/components/learning/LearningHub.tsx
+sed -i 's/bg-brand-text text-white shadow-md transform scale-105/bg-brand-text text-white border-2 border-brand-text border-b-4 translate-y-[-2px] shadow-sm/g' src/components/learning/LearningHub.tsx
+sed -i 's/bg-white border border-gray-200 text-gray-600 hover:bg-brand-bg hover:border-gray-300/bg-white border-2 border-gray-200 border-b-4 text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700/g' src/components/learning/LearningHub.tsx
