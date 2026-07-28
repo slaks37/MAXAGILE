@@ -70,15 +70,17 @@ function TextBlockView({ block }: { block: Extract<LessonBlock, { type: 'text' }
 
 function KeypointBlockView({
   block,
+  t,
 }: {
   block: Extract<LessonBlock, { type: 'keypoint' }>;
+  t: (k: string) => string;
 }) {
   return (
     <div className={`${CARD} border-brand-teal/30 bg-brand-teal/5 dark:bg-brand-teal/10`}>
       <div className="mb-3 flex items-center gap-2">
         <Sparkles className="h-5 w-5 shrink-0 text-brand-teal" />
         <h4 className="text-lg font-extrabold text-brand-text dark:text-slate-100">
-          {block.title || 'Poin Penting'}
+          {block.title || tr(t, 'lmsBlockKeypoint', 'Poin Penting')}
         </h4>
       </div>
       <ul className="space-y-2.5">
@@ -551,7 +553,7 @@ export function LessonPlayer({
 
       <div key={block.id} className="animate-in fade-in">
         {block.type === 'text' && <TextBlockView block={block} />}
-        {block.type === 'keypoint' && <KeypointBlockView block={block} />}
+        {block.type === 'keypoint' && <KeypointBlockView block={block} t={t} />}
         {block.type === 'image' && <ImageBlockView block={block} t={t} />}
         {block.type === 'check' && <CheckBlockView {...common} />}
         {block.type === 'flashcard' && <FlashcardBlockView {...common} />}

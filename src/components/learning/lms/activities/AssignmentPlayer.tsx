@@ -14,6 +14,12 @@ import {
 import type { Activity, AssignmentSubmission, Attachment } from '../types';
 import { uploadFile, formatBytes } from '../store';
 import { useEditMode } from '../EditModeContext';
+import { useLanguage } from '../../../../i18n/LanguageContext';
+
+function tr(t: (k: string) => string, key: string, fallback: string): string {
+  const v = t(key);
+  return v === key ? fallback : v;
+}
 
 export interface AssignmentPlayerProps {
   activity: Activity;
@@ -22,6 +28,7 @@ export interface AssignmentPlayerProps {
 }
 
 export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentPlayerProps) {
+  const { t } = useLanguage();
   const { editMode } = useEditMode();
   const assignment = activity.assignment;
 
@@ -39,7 +46,7 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
   if (!assignment) {
     return (
       <div className="p-6 text-sm text-slate-500">
-        Aktivitas tugas belum dikonfigurasi.
+        {tr(t, 'lmsAssignmentNotConfigured', 'Aktivitas tugas belum dikonfigurasi.')}
       </div>
     );
   }
@@ -56,7 +63,7 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
       const uploaded = await uploadFile(file);
       setAttachments((prev) => [...prev, uploaded]);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Gagal mengunggah file.');
+      setErrorMsg(err.message || tr(t, 'lmsUploadFailed', 'Gagal mengunggah file.'));
     } finally {
       setUploading(false);
     }
@@ -69,7 +76,7 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!textAnswer.trim() && attachments.length === 0) {
-      setErrorMsg('Harap isi jawaban teks atau unggah file lampiran.');
+      setErrorMsg(tr(t, 'lmsAssignmentNeedAnswer', 'Harap isi jawaban teks atau unggah file lampiran.'));
       return;
     }
     const newSubmission: AssignmentSubmission = {
@@ -79,7 +86,7 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
       attachments,
     };
     onSubmit(newSubmission);
-    setSuccessMsg('Tugas berhasil dikirim!');
+    setSuccessMsg(tr(t, 'lmsAssignmentSubmitted', 'Tugas berhasil dikirim!'));
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
@@ -96,7 +103,7 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
     };
     onSubmit(updatedSub);
     setGradingMode(false);
-    setSuccessMsg('Nilai & Umpan Balik berhasil disimpan!');
+    setSuccessMsg(tr(t, 'lmsGradeSaved', 'Nilai & Umpan Balik berhasil disimpan!'));
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
@@ -107,18 +114,19 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-teal">
             <FileText className="h-4 w-4" />
-            <span>Tugas Pengumpulan</span>
+            <span>{tr(t, 'lmsAssignmentHeader', 'Tugas Pengumpulan')}</span>
           </div>
           <div className="flex items-center gap-3 text-xs font-bold text-slate-500 dark:text-slate-400">
             {assignment.dueDate && (
               <span className="inline-flex items-center gap-1">
                 <Clock className="h-3.5 w-3.5 text-amber-500" />
-                Batas Waktu: {new Date(assignment.dueDate).toLocaleDateString('id-ID')}
+                {tr(t, 'lmsDueDate', 'Batas Waktu:')}{' '}
+                {new Date(assignment.dueDate).toLocaleDateString('id-ID')}
               </span>
             )}
             <span className="inline-flex items-center gap-1 rounded-full bg-brand-teal/10 px-2.5 py-0.5 text-brand-teal dark:bg-brand-teal/20">
               <Award className="h-3.5 w-3.5" />
-              Maks Nilai: {assignment.maxScore}
+              {tr(t, 'lmsMaxScoreLabel', 'Maks Nilai:')} {assignment.maxScore}
             </span>
           </div>
         </div>
@@ -135,7 +143,7 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
         {assignment.instructions && (
           <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 whitespace-pre-line">
             <span className="font-extrabold text-brand-text dark:text-slate-100 block mb-1">
-              Petunjuk Pengerjaan:
+              {tr(t, 'lmsInstructionsLabel', 'Petunjuk Pengerjaan:')}
             </span>
             {assignment.instructions}
           </div>
@@ -150,22 +158,24 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
               <CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <div>
                 <h4 className="text-sm font-extrabold text-emerald-900 dark:text-emerald-200">
-                  Tugas Telah Dikirim
+                  {tr(t, 'lmsAssignmentSent', 'Tugas Telah Dikirim')}
                 </h4>
                 <p className="text-xs text-emerald-700 dark:text-emerald-400">
-                  Dikirim pada:{' '}
+                  {tr(t, 'lmsSubmittedAt', 'Dikirim pada:')}{' '}
                   {new Date(submission.submittedAt).toLocaleString('id-ID')}
                 </p>
               </div>
             </div>
             {isGraded ? (
               <div className="rounded-xl bg-emerald-600 px-3 py-1.5 text-center text-white">
-                <span className="block text-[10px] uppercase tracking-wider font-extrabold">Nilai</span>
+                <span className="block text-[10px] uppercase tracking-wider font-extrabold">
+                  {tr(t, 'lmsGradeLabel', 'Nilai')}
+                </span>
                 <span className="text-lg font-black">{submission.grade} / {assignment.maxScore}</span>
               </div>
             ) : (
               <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                Menunggu Penilaian
+                {tr(t, 'lmsAwaitingGrading', 'Menunggu Penilaian')}
               </span>
             )}
           </div>
@@ -174,7 +184,7 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
           {submission.feedback && (
             <div className="mt-3 rounded-xl bg-white p-3 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200 border border-emerald-100 dark:border-emerald-900">
               <span className="font-bold text-emerald-700 dark:text-emerald-400 block mb-1">
-                Umpan Balik Pengajar:
+                {tr(t, 'lmsTeacherFeedback', 'Umpan Balik Pengajar:')}
               </span>
               {submission.feedback}
             </div>
@@ -188,7 +198,7 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-sm font-extrabold text-brand-text dark:text-slate-100 flex items-center gap-2">
               <Award className="h-4 w-4 text-brand-orange" />
-              Penilaian Pengajar (Mode Edit)
+              {tr(t, 'lmsTeacherGrading', 'Penilaian Pengajar (Mode Edit)')}
             </h4>
             <button
               type="button"
@@ -196,7 +206,9 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
               className="inline-flex items-center gap-1 text-xs font-bold text-brand-orange hover:underline cursor-pointer"
             >
               <Pencil className="h-3.5 w-3.5" />
-              {gradingMode ? 'Batal Edit Nilai' : 'Beri / Edit Nilai'}
+              {gradingMode
+                ? tr(t, 'lmsCancelGradeEdit', 'Batal Edit Nilai')
+                : tr(t, 'lmsGiveEditGrade', 'Beri / Edit Nilai')}
             </button>
           </div>
 
@@ -204,7 +216,7 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1">
-                  Nilai (0 - {assignment.maxScore})
+                  {tr(t, 'lmsGradeLabel', 'Nilai')} (0 - {assignment.maxScore})
                 </label>
                 <input
                   type="number"
@@ -217,13 +229,13 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
               </div>
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1">
-                  Umpan Balik / Catatan Evaluasi
+                  {tr(t, 'lmsFeedbackLabel', 'Umpan Balik / Catatan Evaluasi')}
                 </label>
                 <textarea
                   rows={3}
                   value={feedbackInput}
                   onChange={(e) => setFeedbackInput(e.target.value)}
-                  placeholder="Beri catatan perbaikan atau apresiasi..."
+                  placeholder={tr(t, 'lmsFeedbackPlaceholder', 'Beri catatan perbaikan atau apresiasi...')}
                   className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
               </div>
@@ -233,7 +245,7 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
                 className="inline-flex items-center gap-2 rounded-xl bg-brand-orange px-4 py-2 text-xs font-extrabold text-brand-text shadow transition hover:brightness-105 cursor-pointer"
               >
                 <CheckCircle2 className="h-4 w-4" />
-                Simpan Nilai
+                {tr(t, 'lmsSaveGrade', 'Simpan Nilai')}
               </button>
             </div>
           )}
@@ -244,13 +256,17 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
-            Jawaban Teks / Catatan Tugas
+            {tr(t, 'lmsTextAnswerLabel', 'Jawaban Teks / Catatan Tugas')}
           </label>
           <textarea
             rows={5}
             value={textAnswer}
             onChange={(e) => setTextAnswer(e.target.value)}
-            placeholder="Tuliskan jawaban atau ringkasan hasil pengerjaan tugas Anda di sini..."
+            placeholder={tr(
+              t,
+              'lmsTextAnswerPlaceholder',
+              'Tuliskan jawaban atau ringkasan hasil pengerjaan tugas Anda di sini...',
+            )}
             className="w-full rounded-2xl border-2 border-slate-200 bg-white p-4 text-sm font-medium text-slate-800 focus:border-brand-teal focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           />
         </div>
@@ -259,7 +275,7 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
         {assignment.allowFileUpload && (
           <div>
             <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1.5">
-              Lampiran File (Opsional)
+              {tr(t, 'lmsFileAttachmentsOptional', 'Lampiran File (Opsional)')}
             </label>
             <div className="space-y-2">
               {attachments.map((att) => (
@@ -288,7 +304,9 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
 
               <label className="inline-flex items-center gap-2 cursor-pointer rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-2 text-xs font-extrabold text-slate-600 transition hover:border-brand-teal hover:text-brand-teal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
                 <Upload className="h-4 w-4" />
-                {uploading ? 'Mengunggah...' : 'Pilih File Lampiran'}
+                {uploading
+                  ? tr(t, 'lmsUploading', 'Mengunggah...')
+                  : tr(t, 'lmsPickAttachment', 'Pilih File Lampiran')}
                 <input
                   type="file"
                   onChange={handleFileUpload}
@@ -320,7 +338,9 @@ export function AssignmentPlayer({ activity, submission, onSubmit }: AssignmentP
             className="inline-flex items-center gap-2 rounded-2xl border-2 border-b-4 border-brand-text bg-brand-orange px-6 py-3 text-sm font-extrabold text-brand-text shadow transition hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
           >
             <Send className="h-4 w-4" />
-            {isSubmitted ? 'Kirim Ulang Tugas' : 'Kirim Tugas Sekarang'}
+            {isSubmitted
+              ? tr(t, 'lmsResubmitAssignment', 'Kirim Ulang Tugas')
+              : tr(t, 'lmsSubmitAssignment', 'Kirim Tugas Sekarang')}
           </button>
         </div>
       </form>

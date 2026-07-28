@@ -13,3 +13,8 @@ uploads/
 *.db-journal
 .vite/
 
+
+# scratch files from the i18n extraction/merge tooling
+_i18n_*.json
+_extract_i18n.cjs
+_merge_i18n.cjs

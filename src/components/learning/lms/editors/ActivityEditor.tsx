@@ -15,6 +15,7 @@ import { LessonEditor } from './LessonEditor';
 import { MaterialChunk } from '../materialSplitter';
 import type {
   Activity,
+  ActivityType,
   Attachment,
   QuizQuestion,
   AssessmentQuestion,
@@ -29,6 +30,17 @@ function tr(t: (k: string) => string, key: string, fallback: string): string {
   const v = t(key);
   return v === key ? fallback : v;
 }
+
+/** Indonesian fallbacks so an untranslated key never leaks as "LMSACTPAGE". */
+const ACTIVITY_LABEL_FALLBACK: Record<ActivityType, string> = {
+  page: 'Halaman',
+  lesson: 'Pelajaran',
+  quiz: 'Kuis',
+  assessment: 'Asesmen',
+  checklist: 'Ceklis',
+  assignment: 'Tugas',
+  forum: 'Forum',
+};
 
 const inputCls =
   'w-full rounded-2xl border-2 border-slate-200 bg-white px-4 py-2.5 text-sm text-brand-text outline-none transition focus:border-brand-orange dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
@@ -161,7 +173,9 @@ export function ActivityEditor({ activity, onSave, onCancel }: ActivityEditorPro
               <meta.Icon className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{t(meta.labelKey)}</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                {tr(t, meta.labelKey, ACTIVITY_LABEL_FALLBACK[draft.type])}
+              </p>
               <h3 className="text-lg font-extrabold text-brand-text dark:text-slate-100">
                 {tr(t, 'lmsEditActivity', 'Sunting Aktivitas')}
               </h3>
@@ -210,7 +224,7 @@ export function ActivityEditor({ activity, onSave, onCancel }: ActivityEditorPro
                       className="inline-flex items-center gap-1.5 text-xs font-extrabold text-brand-orange hover:underline cursor-pointer disabled:opacity-40"
                     >
                       <Scissors className="h-3.5 w-3.5" />
-                      Pecah Materi ini Jadi Kartu Kecil
+                      {tr(t, 'lmsSplitMaterial', 'Pecah Materi ini Jadi Kartu Kecil')}
                     </button>
                   </div>
                   <textarea
@@ -557,17 +571,21 @@ export function ActivityEditor({ activity, onSave, onCancel }: ActivityEditorPro
             {draft.type === 'assignment' && (
               <div className="space-y-4">
                 <div>
-                  <label className={labelCls}>Petunjuk Tugas</label>
+                  <label className={labelCls}>{tr(t, 'lmsAssignmentInstructions', 'Petunjuk Tugas')}</label>
                   <textarea
                     className={`${inputCls} min-h-[100px] resize-y`}
                     value={assignment.instructions}
                     onChange={(e) => patchAssignment({ instructions: e.target.value })}
-                    placeholder="Tuliskan petunjuk pengerjaan tugas secara rinci..."
+                    placeholder={tr(
+                      t,
+                      'lmsAssignmentInstructionsPlaceholder',
+                      'Tuliskan petunjuk pengerjaan tugas secara rinci...',
+                    )}
                   />
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <label className={labelCls}>Nilai Maksimal</label>
+                    <label className={labelCls}>{tr(t, 'lmsMaxScore', 'Nilai Maksimal')}</label>
                     <input
                       type="number"
                       min="1"
@@ -578,7 +596,7 @@ export function ActivityEditor({ activity, onSave, onCancel }: ActivityEditorPro
                     />
                   </div>
                   <div>
-                    <label className={labelCls}>Batas Waktu (Opsional)</label>
+                    <label className={labelCls}>{tr(t, 'lmsDueDateOptional', 'Batas Waktu (Opsional)')}</label>
                     <input
                       type="date"
                       className={inputCls}
@@ -599,7 +617,7 @@ export function ActivityEditor({ activity, onSave, onCancel }: ActivityEditorPro
                     className="h-4 w-4 rounded border-slate-300 text-brand-teal"
                   />
                   <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300">
-                    Izinkan Siswa Mengunggah Lampiran File
+                    {tr(t, 'lmsAllowFileUpload', 'Izinkan Siswa Mengunggah Lampiran File')}
                   </span>
                 </label>
               </div>
@@ -608,12 +626,18 @@ export function ActivityEditor({ activity, onSave, onCancel }: ActivityEditorPro
             {draft.type === 'forum' && (
               <div className="space-y-4">
                 <div>
-                  <label className={labelCls}>Topik & Pertanyaan Pemantik Forum</label>
+                  <label className={labelCls}>
+                    {tr(t, 'lmsForumPrompt', 'Topik & Pertanyaan Pemantik Forum')}
+                  </label>
                   <textarea
                     className={`${inputCls} min-h-[100px] resize-y`}
                     value={forum.prompt}
                     onChange={(e) => patchForum({ prompt: e.target.value })}
-                    placeholder="Tuliskan topik atau pertanyaan pemantik diskusi..."
+                    placeholder={tr(
+                      t,
+                      'lmsForumPromptPlaceholder',
+                      'Tuliskan topik atau pertanyaan pemantik diskusi...',
+                    )}
                   />
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer pt-1">
@@ -624,7 +648,7 @@ export function ActivityEditor({ activity, onSave, onCancel }: ActivityEditorPro
                     className="h-4 w-4 rounded border-slate-300 text-brand-teal"
                   />
                   <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300">
-                    Izinkan Siswa Membuat Utas Diskusi Baru
+                    {tr(t, 'lmsAllowStudentPosts', 'Izinkan Siswa Membuat Utas Diskusi Baru')}
                   </span>
                 </label>
               </div>

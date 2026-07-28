@@ -14,6 +14,12 @@ import {
 import type { Course, CourseProgress } from '../types';
 import { exportCourseFile, exportCourseToken } from '../store';
 import { exportCourseToMarkdown, exportGradebookToCsv, downloadFile } from '../exportUtils';
+import { useLanguage } from '../../../../i18n/LanguageContext';
+
+function tr(t: (k: string) => string, key: string, fallback: string): string {
+  const v = t(key);
+  return v === key ? fallback : v;
+}
 
 export interface CourseExportModalProps {
   course: Course;
@@ -22,6 +28,7 @@ export interface CourseExportModalProps {
 }
 
 export function CourseExportModal({ course, progress, onClose }: CourseExportModalProps) {
+  const { t } = useLanguage();
   const [copiedToken, setCopiedToken] = useState(false);
   const [exportingJson, setExportingJson] = useState(false);
 
@@ -76,7 +83,7 @@ export function CourseExportModal({ course, progress, onClose }: CourseExportMod
             </div>
             <div>
               <h3 className="text-xl font-extrabold text-brand-text dark:text-slate-100">
-                Ekspor Kursus & Materi
+                {tr(t, 'lmsExportCourseTitle', 'Ekspor Kursus & Materi')}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {course.title}
@@ -95,7 +102,7 @@ export function CourseExportModal({ course, progress, onClose }: CourseExportMod
         {/* Options Grid */}
         <div className="py-6 space-y-4">
           <label className="text-xs font-extrabold uppercase tracking-wide text-slate-400 block">
-            Pilih Format Ekspor:
+            {tr(t, 'lmsPickExportFormat', 'Pilih Format Ekspor:')}
           </label>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -111,10 +118,14 @@ export function CourseExportModal({ course, progress, onClose }: CourseExportMod
               </div>
               <div>
                 <h4 className="text-sm font-extrabold text-brand-text dark:text-slate-100">
-                  Paket Kursus JSON (.json)
+                  {tr(t, 'lmsExportJsonTitle', 'Paket Kursus JSON (.json)')}
                 </h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                  Backup lengkap berisi struktur bab, kuis, dan file lampiran ter-embed.
+                  {tr(
+                    t,
+                    'lmsExportJsonDesc',
+                    'Backup lengkap berisi struktur bab, kuis, dan file lampiran ter-embed.',
+                  )}
                 </p>
               </div>
             </button>
@@ -130,10 +141,16 @@ export function CourseExportModal({ course, progress, onClose }: CourseExportMod
               </div>
               <div>
                 <h4 className="text-sm font-extrabold text-brand-text dark:text-slate-100">
-                  {copiedToken ? 'Kode Token Tersalin!' : 'Kode Token Berbagi'}
+                  {copiedToken
+                    ? tr(t, 'lmsTokenCopiedShort', 'Kode Token Tersalin!')
+                    : tr(t, 'lmsShareToken', 'Kode Token Berbagi')}
                 </h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                  Salin teks token ringkas untuk dibagikan antar pengguna secara cepat.
+                  {tr(
+                    t,
+                    'lmsExportTokenDesc',
+                    'Salin teks token ringkas untuk dibagikan antar pengguna secara cepat.',
+                  )}
                 </p>
               </div>
             </button>
@@ -149,10 +166,14 @@ export function CourseExportModal({ course, progress, onClose }: CourseExportMod
               </div>
               <div>
                 <h4 className="text-sm font-extrabold text-brand-text dark:text-slate-100">
-                  Dokumentasi Markdown (.md)
+                  {tr(t, 'lmsExportMarkdownTitle', 'Dokumentasi Markdown (.md)')}
                 </h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                  Ekspor seluruh materi, bab, dan soal kuis menjadi teks dokumen Markdown.
+                  {tr(
+                    t,
+                    'lmsExportMarkdownDesc',
+                    'Ekspor seluruh materi, bab, dan soal kuis menjadi teks dokumen Markdown.',
+                  )}
                 </p>
               </div>
             </button>
@@ -169,10 +190,14 @@ export function CourseExportModal({ course, progress, onClose }: CourseExportMod
                 </div>
                 <div>
                   <h4 className="text-sm font-extrabold text-brand-text dark:text-slate-100">
-                    Buku Nilai CSV (.csv)
+                    {tr(t, 'lmsExportCsvTitle', 'Buku Nilai CSV (.csv)')}
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                    Ekspor laporan progres dan nilai kuis/tugas ke file spreadsheet CSV.
+                    {tr(
+                      t,
+                      'lmsExportCsvDesc',
+                      'Ekspor laporan progres dan nilai kuis/tugas ke file spreadsheet CSV.',
+                    )}
                   </p>
                 </div>
               </button>
@@ -187,7 +212,7 @@ export function CourseExportModal({ course, progress, onClose }: CourseExportMod
             onClick={onClose}
             className="rounded-2xl border-2 border-slate-300 bg-white px-5 py-2 text-xs font-extrabold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
           >
-            Tutup
+            {tr(t, 'lmsClose', 'Tutup')}
           </button>
         </div>
       </div>

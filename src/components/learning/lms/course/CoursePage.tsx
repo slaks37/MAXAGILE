@@ -304,7 +304,7 @@ export function CoursePage({ course, progress, onExit, onCourseChange, onProgres
               className="inline-flex items-center gap-2 rounded-2xl bg-white/20 px-4 py-2 text-xs font-bold text-white backdrop-blur transition hover:bg-white/30 cursor-pointer"
             >
               <Download className="h-4 w-4" />
-              Ekspor
+              {tr(t, 'lmsExportTab', 'Ekspor')}
             </button>
             <button
               type="button"
@@ -312,7 +312,7 @@ export function CoursePage({ course, progress, onExit, onCourseChange, onProgres
               className="inline-flex items-center gap-2 rounded-2xl bg-white/20 px-4 py-2 text-xs font-bold text-white backdrop-blur transition hover:bg-white/30 cursor-pointer"
             >
               <BarChart3 className="h-4 w-4" />
-              Buku Nilai (Gradebook)
+              {tr(t, 'lmsGradebook', 'Buku Nilai (Gradebook)')}
             </button>
             <button
               type="button"
@@ -325,7 +325,9 @@ export function CoursePage({ course, progress, onExit, onCourseChange, onProgres
               }`}
             >
               <Award className="h-4 w-4" />
-              {percent >= 100 ? 'Klaim Sertifikat Kelulusan' : 'Sertifikat (Selesaikan 100%)'}
+              {percent >= 100
+                ? tr(t, 'lmsClaimCertificateAction', 'Klaim Sertifikat Kelulusan')
+                : tr(t, 'lmsCertificateLockedAction', 'Sertifikat (Selesaikan 100%)')}
             </button>
           </div>
 

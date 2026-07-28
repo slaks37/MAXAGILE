@@ -19,6 +19,12 @@ import {
   countWords,
   estimateReadingTime,
 } from '../materialSplitter';
+import { useLanguage } from '../../../../i18n/LanguageContext';
+
+function tr(t: (k: string) => string, key: string, fallback: string): string {
+  const v = t(key);
+  return v === key ? fallback : v;
+}
 
 export interface MaterialSplitterModalProps {
   initialText: string;
@@ -31,6 +37,7 @@ export function MaterialSplitterModal({
   onApplyChunks,
   onClose,
 }: MaterialSplitterModalProps) {
+  const { t } = useLanguage();
   const [strategy, setStrategy] = useState<SplitStrategy>('1min');
   const [partsCount, setPartsCount] = useState(3);
   const [chunks, setChunks] = useState<MaterialChunk[]>([]);
@@ -94,10 +101,12 @@ export function MaterialSplitterModal({
             </div>
             <div>
               <h3 className="text-xl font-extrabold text-brand-text dark:text-slate-100">
-                Pemecah Teks Materi (Smart Material Splitter)
+                {tr(t, 'lmsSplitterTitle', 'Pemecah Teks Materi (Smart Material Splitter)')}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Pecah materi panjang ({totalWords} kata, ~{totalEstTime} menit) menjadi kartu-kartu bacaan ringkas.
+                {tr(t, 'lmsSplitterHintPrefix', 'Pecah materi panjang')} ({totalWords}{' '}
+                {tr(t, 'lmsWordsUnit', 'kata')}, ~{totalEstTime} {tr(t, 'lmsMinutesUnit', 'menit')}){' '}
+                {tr(t, 'lmsSplitterHintSuffix', 'menjadi kartu-kartu bacaan ringkas.')}
               </p>
             </div>
           </div>
@@ -113,7 +122,7 @@ export function MaterialSplitterModal({
         {/* Strategy Selector */}
         <div className="py-5 border-b border-slate-100 dark:border-slate-800 space-y-4">
           <label className="text-xs font-extrabold uppercase tracking-wide text-slate-400 block">
-            Pilih Metode Pemecahan Materi:
+            {tr(t, 'lmsSplitterMethod', 'Pilih Metode Pemecahan Materi:')}
           </label>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -129,10 +138,14 @@ export function MaterialSplitterModal({
               <Clock className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
               <div>
                 <h4 className="text-xs font-extrabold text-brand-text dark:text-slate-100">
-                  Micro-Learning 1-Menit
+                  {tr(t, 'lmsSplitStrategy1Min', 'Micro-Learning 1-Menit')}
                 </h4>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                  Pecah tiap ~180 kata untuk durasi baca 1 menit per kartu.
+                  {tr(
+                    t,
+                    'lmsSplitStrategy1MinDesc',
+                    'Pecah tiap ~180 kata untuk durasi baca 1 menit per kartu.',
+                  )}
                 </p>
               </div>
             </button>
@@ -149,10 +162,14 @@ export function MaterialSplitterModal({
               <BookOpen className="h-5 w-5 text-brand-teal shrink-0 mt-0.5" />
               <div>
                 <h4 className="text-xs font-extrabold text-brand-text dark:text-slate-100">
-                  Berdasarkan Bab / Heading
+                  {tr(t, 'lmsSplitStrategyHeadings', 'Berdasarkan Bab / Heading')}
                 </h4>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                  Pecah otomatis mengikuti judul bab (#, ##, Bab).
+                  {tr(
+                    t,
+                    'lmsSplitStrategyHeadingsDesc',
+                    'Pecah otomatis mengikuti judul bab (#, ##, Bab).',
+                  )}
                 </p>
               </div>
             </button>
@@ -169,10 +186,10 @@ export function MaterialSplitterModal({
               <Layers className="h-5 w-5 text-violet-500 shrink-0 mt-0.5" />
               <div>
                 <h4 className="text-xs font-extrabold text-brand-text dark:text-slate-100">
-                  Berdasarkan Jumlah Bagian
+                  {tr(t, 'lmsSplitStrategyParts', 'Berdasarkan Jumlah Bagian')}
                 </h4>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                  Bagi sama rata menjadi N bagian spesifik.
+                  {tr(t, 'lmsSplitStrategyPartsDesc', 'Bagi sama rata menjadi N bagian spesifik.')}
                 </p>
               </div>
             </button>
@@ -182,7 +199,10 @@ export function MaterialSplitterModal({
           {strategy === 'parts' && (
             <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-2xl dark:bg-slate-800/50">
               <label className="text-xs font-extrabold text-slate-700 dark:text-slate-300">
-                Pecah Menjadi: <span className="text-brand-orange font-black">{partsCount} Bagian</span>
+                {tr(t, 'lmsSplitInto', 'Pecah Menjadi:')}{' '}
+                <span className="text-brand-orange font-black">
+                  {partsCount} {tr(t, 'lmsPartsUnit', 'Bagian')}
+                </span>
               </label>
               <input
                 type="range"
@@ -199,13 +219,16 @@ export function MaterialSplitterModal({
         {/* Chunks Live Preview */}
         <div className="py-4 space-y-3">
           <div className="flex items-center justify-between text-xs font-extrabold text-slate-400 uppercase tracking-wide">
-            <span>Hasil Potongan Materi ({chunks.length} Kartu Bacaan)</span>
+            <span>
+              {tr(t, 'lmsSplitResult', 'Hasil Potongan Materi')} ({chunks.length}{' '}
+              {tr(t, 'lmsReadingCardsUnit', 'Kartu Bacaan')})
+            </span>
           </div>
 
           <div className="max-h-[340px] overflow-y-auto space-y-3 pr-1 custom-scrollbar">
             {chunks.length === 0 ? (
               <div className="p-8 text-center text-xs text-slate-400">
-                Teks materi kosong atau tidak dapat dipecah.
+                {tr(t, 'lmsSplitterEmpty', 'Teks materi kosong atau tidak dapat dipecah.')}
               </div>
             ) : (
               chunks.map((chunk, index) => (
@@ -226,10 +249,13 @@ export function MaterialSplitterModal({
                       />
                     </div>
                     <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400">
-                      <span>{chunk.wordCount} kata</span>
+                      <span>
+                        {chunk.wordCount} {tr(t, 'lmsWordsUnit', 'kata')}
+                      </span>
                       <span>•</span>
                       <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                        <Clock className="h-3 w-3" /> ~{chunk.readingTimeMinutes} mnt
+                        <Clock className="h-3 w-3" /> ~{chunk.readingTimeMinutes}{' '}
+                        {tr(t, 'lmsMinutesShort', 'mnt')}
                       </span>
                     </div>
                   </div>
@@ -249,7 +275,8 @@ export function MaterialSplitterModal({
         {/* Footer Actions */}
         <div className="flex items-center justify-between border-t border-slate-100 pt-4 dark:border-slate-800">
           <span className="text-xs text-slate-400 font-bold">
-            Total: {chunks.length} Kartu Bacaan Ringkas
+            {tr(t, 'lmsSplitTotal', 'Total:')} {chunks.length}{' '}
+            {tr(t, 'lmsReadingCardsShort', 'Kartu Bacaan Ringkas')}
           </span>
           <div className="flex items-center gap-3">
             <button
@@ -257,7 +284,7 @@ export function MaterialSplitterModal({
               onClick={onClose}
               className="rounded-2xl border-2 border-slate-300 bg-white px-4 py-2.5 text-xs font-extrabold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
             >
-              Batal
+              {tr(t, 'lmsCancel', 'Batal')}
             </button>
             <button
               type="button"
@@ -265,7 +292,7 @@ export function MaterialSplitterModal({
               disabled={chunks.length === 0}
               className="inline-flex items-center gap-2 rounded-2xl border-2 border-b-4 border-brand-text bg-brand-orange px-6 py-2.5 text-xs font-extrabold text-brand-text shadow transition hover:-translate-y-0.5 disabled:opacity-50 cursor-pointer"
             >
-              <CheckCircle2 className="h-4 w-4" /> Terapkan Pemecahan Materi
+              <CheckCircle2 className="h-4 w-4" /> {tr(t, 'lmsApplySplit', 'Terapkan Pemecahan Materi')}
             </button>
           </div>
         </div>

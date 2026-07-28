@@ -16,6 +16,12 @@ import {
 import type { Course, CourseProgress } from '../types';
 import { isActivityComplete, courseProgressPercent } from '../store';
 import { exportGradebookToCsv } from '../exportUtils';
+import { useLanguage } from '../../../../i18n/LanguageContext';
+
+function tr(t: (k: string) => string, key: string, fallback: string): string {
+  const v = t(key);
+  return v === key ? fallback : v;
+}
 
 export interface GradebookModalProps {
   course: Course;
@@ -24,6 +30,7 @@ export interface GradebookModalProps {
 }
 
 export function GradebookModal({ course, progress, onClose }: GradebookModalProps) {
+  const { t } = useLanguage();
   const overallPercent = courseProgressPercent(course, progress);
 
   // Flatten all activities with section info
@@ -64,23 +71,25 @@ export function GradebookModal({ course, progress, onClose }: GradebookModalProp
           totalScoredCount++;
           totalScoreSum += normalizedPercent;
         } else if (sub && sub.submittedAt) {
-          scoreStr = 'Terkirim (Belum Dinilai)';
+          scoreStr = tr(t, 'lmsSubmittedUngraded', 'Terkirim (Belum Dinilai)');
         }
       } else if (a.type === 'assessment') {
         const ap = progress.assessment[a.id];
         if (ap) {
-          scoreStr = `Rata-rata Skala: ${ap.avg}`;
+          scoreStr = `${tr(t, 'lmsAvgScale', 'Rata-rata Skala:')} ${ap.avg}`;
         }
       } else if (a.type === 'checklist') {
         const chk = progress.checklist[a.id] || {};
         const totalItems = a.checklist?.items.length || 0;
         const doneItems = Object.values(chk).filter(Boolean).length;
-        scoreStr = `${doneItems} / ${totalItems} Item`;
+        scoreStr = `${doneItems} / ${totalItems} ${tr(t, 'lmsChecklistItem', 'Item')}`;
       } else if (a.type === 'page') {
-        scoreStr = completed ? 'Dibaca' : 'Belum Dibaca';
+        scoreStr = completed
+          ? tr(t, 'lmsPageRead', 'Dibaca')
+          : tr(t, 'lmsPageUnread', 'Belum Dibaca');
       } else if (a.type === 'forum') {
         const count = progress.forumPosts?.[a.id]?.length || 0;
-        scoreStr = `${count} Postingan`;
+        scoreStr = `${count} ${tr(t, 'lmsPostsUnit', 'Postingan')}`;
       }
 
       items.push({
@@ -115,7 +124,7 @@ export function GradebookModal({ course, progress, onClose }: GradebookModalProp
             </div>
             <div>
               <h3 className="text-xl font-extrabold text-brand-text dark:text-slate-100">
-                Buku Nilai & Analitik Belajar
+                {tr(t, 'lmsGradebookTitle', 'Buku Nilai & Analitik Belajar')}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {course.title}
@@ -129,7 +138,7 @@ export function GradebookModal({ course, progress, onClose }: GradebookModalProp
               className="inline-flex items-center gap-1.5 rounded-xl border-2 border-slate-200 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-700 shadow-sm transition hover:border-brand-teal hover:text-brand-teal dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
             >
               <Download className="h-4 w-4" />
-              Ekspor ke CSV
+              {tr(t, 'lmsExportCsv', 'Ekspor ke CSV')}
             </button>
             <button
               type="button"
@@ -145,7 +154,7 @@ export function GradebookModal({ course, progress, onClose }: GradebookModalProp
         <div className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-3 bg-slate-50 dark:bg-slate-950/40 border-b border-slate-200 dark:border-slate-800">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             <span className="text-xs font-extrabold text-slate-400 block uppercase">
-              Progres Penyelesaian
+              {tr(t, 'lmsCompletionProgress', 'Progres Penyelesaian')}
             </span>
             <span className="text-2xl font-black text-brand-text dark:text-slate-100 mt-1 block">
               {overallPercent}%
@@ -160,33 +169,35 @@ export function GradebookModal({ course, progress, onClose }: GradebookModalProp
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             <span className="text-xs font-extrabold text-slate-400 block uppercase">
-              Rata-rata Nilai Evaluasi
+              {tr(t, 'lmsAverageGrade', 'Rata-rata Nilai Evaluasi')}
             </span>
             <span className="text-2xl font-black text-brand-orange mt-1 block">
-              {totalScoredCount > 0 ? `${averageGrade}%` : 'Belum ada'}
+              {totalScoredCount > 0 ? `${averageGrade}%` : tr(t, 'lmsNoneYet', 'Belum ada')}
             </span>
             <span className="text-[11px] text-slate-400">
-              Dari {totalScoredCount} kuis & tugas berskor
+              {tr(t, 'lmsScoredFrom', 'Dari')} {totalScoredCount}{' '}
+              {tr(t, 'lmsScoredItemsUnit', 'kuis & tugas berskor')}
             </span>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             <span className="text-xs font-extrabold text-slate-400 block uppercase">
-              Status Kelulusan
+              {tr(t, 'lmsPassStatus', 'Status Kelulusan')}
             </span>
             <div className="mt-1 flex items-center gap-2">
               {overallPercent >= 100 ? (
                 <span className="inline-flex items-center gap-1 text-base font-extrabold text-emerald-600 dark:text-emerald-400">
-                  <CheckCircle2 className="h-5 w-5" /> Lulus (100%)
+                  <CheckCircle2 className="h-5 w-5" /> {tr(t, 'lmsPassedFull', 'Lulus (100%)')}
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 text-base font-extrabold text-amber-600 dark:text-amber-400">
-                  <Clock className="h-5 w-5" /> Dalam Proses
+                  <Clock className="h-5 w-5" /> {tr(t, 'lmsInProgress', 'Dalam Proses')}
                 </span>
               )}
             </div>
             <span className="text-[11px] text-slate-400">
-              {items.filter((i) => i.completed).length} dari {items.length} Aktivitas Selesai
+              {items.filter((i) => i.completed).length} {tr(t, 'lmsOfConnector', 'dari')}{' '}
+              {items.length} {tr(t, 'lmsActivitiesCompleted', 'Aktivitas Selesai')}
             </span>
           </div>
         </div>
@@ -195,17 +206,17 @@ export function GradebookModal({ course, progress, onClose }: GradebookModalProp
         <div className="flex-1 overflow-auto p-6">
           {items.length === 0 ? (
             <div className="p-8 text-center text-sm text-slate-400">
-              Belum ada aktivitas pada kursus ini.
+              {tr(t, 'lmsNoActivitiesInCourse', 'Belum ada aktivitas pada kursus ini.')}
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
                 <thead>
                   <tr className="border-b-2 border-slate-200 text-[11px] font-extrabold uppercase text-slate-400 dark:border-slate-800">
-                    <th className="pb-3 pr-4">Topik</th>
-                    <th className="pb-3 px-4">Nama Aktivitas</th>
-                    <th className="pb-3 px-4">Status</th>
-                    <th className="pb-3 pl-4 text-right">Nilai / Hasil</th>
+                    <th className="pb-3 pr-4">{tr(t, 'lmsTopicsLabel', 'Topik')}</th>
+                    <th className="pb-3 px-4">{tr(t, 'lmsActivityName', 'Nama Aktivitas')}</th>
+                    <th className="pb-3 px-4">{tr(t, 'lmsStatusLabel', 'Status')}</th>
+                    <th className="pb-3 pl-4 text-right">{tr(t, 'lmsGradeResult', 'Nilai / Hasil')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -226,11 +237,11 @@ export function GradebookModal({ course, progress, onClose }: GradebookModalProp
                       <td className="py-3.5 px-4">
                         {it.completed ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                            <CheckCircle2 className="h-3 w-3" /> Selesai
+                            <CheckCircle2 className="h-3 w-3" /> {tr(t, 'lmsCompleted', 'Selesai')}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                            Belum Selesai
+                            {tr(t, 'lmsNotCompleted', 'Belum Selesai')}
                           </span>
                         )}
                       </td>

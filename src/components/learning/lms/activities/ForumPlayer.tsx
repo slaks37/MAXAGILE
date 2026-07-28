@@ -13,6 +13,12 @@ import {
 import type { Activity, ForumPost, ForumReply } from '../types';
 import { genId } from '../store';
 import { useEditMode } from '../EditModeContext';
+import { useLanguage } from '../../../../i18n/LanguageContext';
+
+function tr(t: (k: string) => string, key: string, fallback: string): string {
+  const v = t(key);
+  return v === key ? fallback : v;
+}
 
 export interface ForumPlayerProps {
   activity: Activity;
@@ -27,6 +33,7 @@ export function ForumPlayer({
   onAddPost,
   onAddReply,
 }: ForumPlayerProps) {
+  const { t } = useLanguage();
   const { editMode } = useEditMode();
   const forum = activity.forum;
 
@@ -36,7 +43,7 @@ export function ForumPlayer({
   const [showNewPostForm, setShowNewPostForm] = useState(false);
   const [postTitle, setPostTitle] = useState('');
   const [postContent, setPostContent] = useState('');
-  const [authorName, setAuthorName] = useState('Siswa MaxAgile');
+  const [authorName, setAuthorName] = useState(tr(t, 'lmsDefaultStudentName', 'Siswa MaxAgile'));
 
   const [activeReplyPostId, setActiveReplyPostId] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
@@ -44,7 +51,7 @@ export function ForumPlayer({
   if (!forum) {
     return (
       <div className="p-6 text-sm text-slate-500">
-        Aktivitas forum belum dikonfigurasi.
+        {tr(t, 'lmsForumNotConfigured', 'Aktivitas forum belum dikonfigurasi.')}
       </div>
     );
   }
@@ -57,7 +64,7 @@ export function ForumPlayer({
       id: genId('post'),
       title: postTitle.trim(),
       content: postContent.trim(),
-      authorName: authorName.trim() || 'Pengguna',
+      authorName: authorName.trim() || tr(t, 'lmsDefaultUserName', 'Pengguna'),
       authorRole: editMode ? 'Pengajar' : 'Siswa',
       createdAt: new Date().toISOString(),
       replies: [],
@@ -75,7 +82,7 @@ export function ForumPlayer({
 
     const newReply: ForumReply = {
       id: genId('reply'),
-      authorName: authorName.trim() || 'Pengguna',
+      authorName: authorName.trim() || tr(t, 'lmsDefaultUserName', 'Pengguna'),
       authorRole: editMode ? 'Pengajar' : 'Siswa',
       content: replyContent.trim(),
       createdAt: new Date().toISOString(),
@@ -94,10 +101,10 @@ export function ForumPlayer({
         <div className="flex items-center justify-between gap-3 mb-2">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400">
             <MessageSquare className="h-4 w-4" />
-            <span>Forum Diskusi</span>
+            <span>{tr(t, 'lmsActForum', 'Forum Diskusi')}</span>
           </div>
           <span className="text-xs text-slate-400 font-medium">
-            {allPosts.length} Diskusi
+            {allPosts.length} {tr(t, 'lmsDiscussionsUnit', 'Diskusi')}
           </span>
         </div>
 
@@ -114,7 +121,7 @@ export function ForumPlayer({
           <div className="mt-4 rounded-xl border border-sky-100 bg-sky-50/60 p-4 text-sm text-sky-950 dark:border-sky-900/40 dark:bg-sky-950/20 dark:text-sky-200">
             <span className="font-extrabold block mb-1 flex items-center gap-1.5">
               <Sparkles className="h-4 w-4 text-sky-600 dark:text-sky-400" />
-              Topik & Pemantik Diskusi:
+              {tr(t, 'lmsForumPromptLabel', 'Topik & Pemantik Diskusi:')}
             </span>
             {forum.prompt}
           </div>
@@ -124,7 +131,7 @@ export function ForumPlayer({
       {/* Action Bar */}
       <div className="flex items-center justify-between">
         <h4 className="text-base font-extrabold text-brand-text dark:text-slate-100">
-          Daftar Utas Diskusi
+          {tr(t, 'lmsForumThreadList', 'Daftar Utas Diskusi')}
         </h4>
         {(forum.allowStudentPosts || editMode) && (
           <button
@@ -133,7 +140,9 @@ export function ForumPlayer({
             className="inline-flex items-center gap-2 rounded-2xl border-2 border-b-4 border-brand-text bg-brand-orange px-4 py-2 text-xs font-extrabold text-brand-text shadow transition hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
           >
             <Plus className="h-4 w-4" />
-            {showNewPostForm ? 'Batal' : 'Buat Topik Diskusi Baru'}
+            {showNewPostForm
+              ? tr(t, 'lmsCancel', 'Batal')
+              : tr(t, 'lmsNewDiscussionTopic', 'Buat Topik Diskusi Baru')}
           </button>
         )}
       </div>
@@ -145,12 +154,12 @@ export function ForumPlayer({
           className="rounded-2xl border-2 border-brand-orange bg-amber-50/30 p-5 space-y-4 dark:border-brand-orange/60 dark:bg-amber-950/20 animate-in fade-in"
         >
           <h4 className="text-sm font-extrabold text-brand-text dark:text-slate-100">
-            Mulai Diskusi Baru
+            {tr(t, 'lmsNewDiscussion', 'Mulai Diskusi Baru')}
           </h4>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Nama Pengirim
+                {tr(t, 'lmsAuthorName', 'Nama Pengirim')}
               </label>
               <input
                 type="text"
@@ -161,26 +170,34 @@ export function ForumPlayer({
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Judul Diskusi
+                {tr(t, 'lmsDiscussionTitle', 'Judul Diskusi')}
               </label>
               <input
                 type="text"
                 value={postTitle}
                 onChange={(e) => setPostTitle(e.target.value)}
-                placeholder="Tulis judul topik pertanyaan / gagasan..."
+                placeholder={tr(
+                  t,
+                  'lmsDiscussionTitlePlaceholder',
+                  'Tulis judul topik pertanyaan / gagasan...',
+                )}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
             </div>
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Isi Pesan / Pertanyaan
+              {tr(t, 'lmsDiscussionBody', 'Isi Pesan / Pertanyaan')}
             </label>
             <textarea
               rows={4}
               value={postContent}
               onChange={(e) => setPostContent(e.target.value)}
-              placeholder="Jelaskan pertanyaan atau ide Anda untuk didiskusikan..."
+              placeholder={tr(
+                t,
+                'lmsDiscussionBodyPlaceholder',
+                'Jelaskan pertanyaan atau ide Anda untuk didiskusikan...',
+              )}
               className="w-full rounded-xl border border-slate-300 bg-white p-3 text-xs font-medium dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
@@ -189,7 +206,7 @@ export function ForumPlayer({
             className="inline-flex items-center gap-2 rounded-xl bg-brand-orange px-5 py-2.5 text-xs font-extrabold text-brand-text shadow transition hover:brightness-105 cursor-pointer"
           >
             <Send className="h-4 w-4" />
-            Kirim Diskusi
+            {tr(t, 'lmsSendDiscussion', 'Kirim Diskusi')}
           </button>
         </form>
       )}
@@ -198,7 +215,7 @@ export function ForumPlayer({
       <div className="space-y-4">
         {allPosts.length === 0 ? (
           <div className="rounded-2xl border-2 border-dashed border-slate-200 p-8 text-center text-xs text-slate-400 dark:border-slate-800">
-            Belum ada diskusi pada forum ini. Mulai diskusi pertama Anda!
+            {tr(t, 'lmsForumEmpty', 'Belum ada diskusi pada forum ini. Mulai diskusi pertama Anda!')}
           </div>
         ) : (
           allPosts.map((post) => (
@@ -220,11 +237,11 @@ export function ForumPlayer({
                       {post.authorRole === 'Pengajar' ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-brand-orange/20 px-2 py-0.5 text-[10px] font-extrabold text-brand-text">
                           <ShieldCheck className="h-3 w-3" />
-                          Pengajar
+                          {tr(t, 'lmsRoleTeacher', 'Pengajar')}
                         </span>
                       ) : (
                         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                          Siswa
+                          {tr(t, 'lmsRoleStudent', 'Siswa')}
                         </span>
                       )}
                     </div>
@@ -256,7 +273,9 @@ export function ForumPlayer({
                   className="flex items-center gap-1.5 hover:text-brand-teal cursor-pointer"
                 >
                   <MessageCircle className="h-4 w-4" />
-                  <span>Balas ({post.replies?.length || 0})</span>
+                  <span>
+                    {tr(t, 'lmsReply', 'Balas')} ({post.replies?.length || 0})
+                  </span>
                 </button>
               </div>
 
@@ -275,7 +294,7 @@ export function ForumPlayer({
                           </span>
                           {reply.authorRole === 'Pengajar' && (
                             <span className="rounded-full bg-brand-orange/20 px-2 py-0.5 text-[9px] font-extrabold text-brand-text">
-                              Pengajar
+                              {tr(t, 'lmsRoleTeacher', 'Pengajar')}
                             </span>
                           )}
                         </div>
@@ -301,7 +320,7 @@ export function ForumPlayer({
                     rows={2}
                     value={replyContent}
                     onChange={(e) => setReplyContent(e.target.value)}
-                    placeholder={`Tulis balasan untuk ${post.authorName}...`}
+                    placeholder={`${tr(t, 'lmsReplyToPrefix', 'Tulis balasan untuk')} ${post.authorName}...`}
                     className="w-full rounded-xl border border-slate-300 bg-slate-50 p-3 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                   <div className="flex items-center gap-2 justify-end">
@@ -310,7 +329,7 @@ export function ForumPlayer({
                       onClick={() => setActiveReplyPostId(null)}
                       className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
                     >
-                      Batal
+                      {tr(t, 'lmsCancel', 'Batal')}
                     </button>
                     <button
                       type="button"
@@ -318,7 +337,7 @@ export function ForumPlayer({
                       className="inline-flex items-center gap-1 rounded-xl bg-brand-teal px-4 py-1.5 text-xs font-extrabold text-white shadow hover:brightness-105 cursor-pointer"
                     >
                       <Send className="h-3.5 w-3.5" />
-                      Kirim Balasan
+                      {tr(t, 'lmsSendReply', 'Kirim Balasan')}
                     </button>
                   </div>
                 </div>

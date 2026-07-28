@@ -81,7 +81,11 @@ export function CourseDashboard({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari kursus berdasarkan judul atau deskripsi..."
+              placeholder={tr(
+                t,
+                'lmsSearchCoursePlaceholder',
+                'Cari kursus berdasarkan judul atau deskripsi...',
+              )}
               className="w-full rounded-2xl border-2 border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm font-medium text-slate-800 placeholder-slate-400 outline-none transition focus:border-brand-teal dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
             />
           </div>
@@ -98,7 +102,7 @@ export function CourseDashboard({
                     : 'bg-white text-slate-600 border-2 border-slate-200 hover:border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
                 }`}
               >
-                Semua ({courses.length})
+                {tr(t, 'lmsAllCategories', 'Semua')} ({courses.length})
               </button>
               {categories.map((cat) => {
                 const count = courses.filter((c) => (c.category || 'Umum') === cat).length;
@@ -131,7 +135,7 @@ export function CourseDashboard({
             className="inline-flex items-center gap-2 rounded-2xl border-2 border-b-4 border-emerald-600 bg-emerald-500 px-5 py-3 text-sm font-extrabold text-white transition hover:-translate-y-0.5 active:translate-y-0 cursor-pointer shadow-sm"
           >
             <Sparkles className="h-4 w-4" />
-            Buat dari Dokumen (PDF, Word, Text)
+            {tr(t, 'lmsCreateFromDocument', 'Buat dari Dokumen (PDF, Word, Text)')}
           </button>
           <button
             type="button"

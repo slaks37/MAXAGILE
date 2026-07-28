@@ -100,7 +100,7 @@ export function CourseSettingsModal({ course, onSave, onClose }: CourseSettingsM
               type="text"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              placeholder="Umum"
+              placeholder={tr(t, 'lmsCategoryDefault', 'Umum')}
               className={inputClass}
             />
           </div>
