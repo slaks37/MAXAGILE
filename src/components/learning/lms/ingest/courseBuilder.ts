@@ -19,8 +19,9 @@ import type {
   QuizQuestion,
   Section,
 } from '../types';
-import { genId } from '../store';
+import { attachmentKind, genId } from '../store';
 import { GRADIENTS } from '../theme';
+import { buildLessonBlocks } from './lessonBuilder';
 import type { DocChunk, SplitResult, SplitTier } from './outline';
 
 // ---------------------------------------------------------------------------
@@ -36,10 +37,16 @@ export interface BuildOptions {
   includeQuiz?: boolean;
   /** default true */
   includeChecklist?: boolean;
-  /** attached to the FIRST section's page activity only */
+  /** attached to the FIRST section only */
   attachments?: Attachment[];
   /** default "id" */
   language?: 'id' | 'en';
+  /**
+   * Default TRUE. Builds the reading activity as an interactive `lesson`
+   * (bite-sized blocks with instant feedback). Set to false to fall back to the
+   * legacy single `page` full of text.
+   */
+  interactive?: boolean;
 }
 
 export interface BuiltCourse {
@@ -53,7 +60,7 @@ export interface BuiltCourse {
   };
 }
 
-type Lang = 'id' | 'en';
+export type Lang = 'id' | 'en';
 
 const MAX_QUESTIONS_PER_SECTION = 3;
 const QUESTION_POINTS = 10;
@@ -106,22 +113,22 @@ function words(t: string): number {
   return s ? s.split(/\s+/).filter(Boolean).length : 0;
 }
 
-function normalizeKey(s: string): string {
+export function normalizeKey(s: string): string {
   return String(s || '')
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 }
 
-function tidy(s: string): string {
+export function tidy(s: string): string {
   return String(s || '').replace(/\s+/g, ' ').trim();
 }
 
-function stripLead(s: string): string {
+export function stripLead(s: string): string {
   return tidy(s).replace(/^[\s•·*\-–—>]+/, '').replace(/^\(?\d+[.)]\s*/, '').trim();
 }
 
-function truncateAtWord(s: string, max: number): string {
+export function truncateAtWord(s: string, max: number): string {
   const t = tidy(s);
   if (t.length <= max) return t;
   const cut = t.slice(0, max);
@@ -131,7 +138,7 @@ function truncateAtWord(s: string, max: number): string {
 }
 
 /** True for lines that start their own block (bullets, numbered items). */
-function isBlockStart(line: string): boolean {
+export function isBlockStart(line: string): boolean {
   return /^([•·*\-–—>]|\(?\d+[.)])\s+/.test(line);
 }
 
@@ -143,7 +150,7 @@ function isBlockStart(line: string): boolean {
  * "is far from superficial, and ...". Lines are joined unless the previous line
  * clearly ends a sentence or the next line starts a new block.
  */
-function reflowLines(text: string): string[] {
+export function reflowLines(text: string): string[] {
   const paragraphs: string[] = [];
   for (const block of String(text || '').split(/\n\s*\n+/)) {
     let buf = '';
@@ -170,7 +177,7 @@ function reflowLines(text: string): string[] {
 }
 
 /** Split into sentences, keeping list items (one per line) intact. */
-function splitSentences(text: string): string[] {
+export function splitSentences(text: string): string[] {
   const out: string[] = [];
   for (const paragraph of reflowLines(text)) {
     for (const raw of paragraph.split(/(?<=[.!?])\s+/)) {
@@ -185,7 +192,7 @@ function splitSentences(text: string): string[] {
  * A sentence is only worth quoting back to the learner when it reads as a whole
  * thought: it must open like a sentence (not mid-clause) and actually end.
  */
-function isWellFormedSentence(s: string): boolean {
+export function isWellFormedSentence(s: string): boolean {
   const t = tidy(s);
   if (t.length < 40) return false;
   if (!/^["'“(]?[A-Z0-9]/.test(t)) return false; // fragments start lowercase
@@ -194,7 +201,7 @@ function isWellFormedSentence(s: string): boolean {
   return letters >= t.length * 0.5; // skip formula/reference soup
 }
 
-function shuffle<T>(arr: T[]): T[] {
+export function shuffle<T>(arr: T[]): T[] {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -209,7 +216,7 @@ function shuffle<T>(arr: T[]): T[] {
 // Harvesting: definitions
 // ---------------------------------------------------------------------------
 
-interface DefCandidate {
+export interface DefCandidate {
   term: string;
   definition: string;
 }
@@ -236,7 +243,7 @@ function usableDefinition(raw: string): string | null {
   return truncateAtWord(d, MAX_OPTION_CHARS);
 }
 
-function harvestDefinitions(text: string, lang: Lang): DefCandidate[] {
+export function harvestDefinitions(text: string, lang: Lang): DefCandidate[] {
   const re = lang === 'en' ? DEF_RE_EN : DEF_RE_ID;
   const seen = new Set<string>();
   const out: DefCandidate[] = [];
@@ -259,7 +266,7 @@ function harvestDefinitions(text: string, lang: Lang): DefCandidate[] {
 // Harvesting: salient terms (for cloze questions)
 // ---------------------------------------------------------------------------
 
-interface TermCandidate {
+export interface TermCandidate {
   term: string;
   sentence: string;
 }
@@ -294,7 +301,7 @@ function salientTerm(sentence: string): string | null {
   return best ? best : null;
 }
 
-function harvestTerms(text: string): TermCandidate[] {
+export function harvestTerms(text: string): TermCandidate[] {
   const seen = new Set<string>();
   const out: TermCandidate[] = [];
   for (const sentence of splitSentences(text)) {
@@ -327,7 +334,7 @@ function makeQuestion(text: string, correct: string, distractors: string[]): Qui
   };
 }
 
-function pickDistractors(pool: string[], correct: string): string[] {
+export function pickDistractors(pool: string[], correct: string): string[] {
   const correctKey = normalizeKey(correct);
   const used = new Set<string>([correctKey]);
   const picked: string[] = [];
@@ -416,7 +423,7 @@ function buildSectionQuestions(
 }
 
 /** Replace the first occurrence of `term` with a blank. Null when not found. */
-function blankOut(sentence: string, term: string): string | null {
+export function blankOut(sentence: string, term: string): string | null {
   const idx = sentence.indexOf(term);
   if (idx < 0) return null;
   const out = sentence.slice(0, idx) + '______' + sentence.slice(idx + term.length);
@@ -424,7 +431,7 @@ function blankOut(sentence: string, term: string): string | null {
 }
 
 /** Shorten a cloze sentence while keeping the blank visible. */
-function clozeWindow(blanked: string, max: number): string {
+export function clozeWindow(blanked: string, max: number): string {
   const t = tidy(blanked);
   if (t.length <= max) return t;
   const at = t.indexOf('______');
@@ -542,6 +549,7 @@ export function buildCourseFromSplit(split: SplitResult, opts?: BuildOptions): B
   const lang: Lang = o.language === 'en' ? 'en' : 'id';
   const includeQuiz = o.includeQuiz !== false;
   const includeChecklist = o.includeChecklist !== false;
+  const interactive = o.interactive !== false;
 
   const chunks: DocChunk[] = split && Array.isArray(split.chunks) ? split.chunks.filter(Boolean) : [];
   const tier: SplitTier = (split && split.tier) || 'readingTime';
@@ -564,16 +572,31 @@ export function buildCourseFromSplit(split: SplitResult, opts?: BuildOptions): B
     const chunkTitle = tidy(chunk.title) || (lang === 'en' ? `Section ${i + 1}` : `Bagian ${i + 1}`);
     const activities: Activity[] = [];
 
-    // 1. reading page
-    activities.push({
-      id: genId('act'),
-      type: 'page',
-      title: (lang === 'en' ? 'Read: ' : 'Materi: ') + chunkTitle,
-      page: {
-        content: chunk.text,
-        attachments: i === 0 && Array.isArray(o.attachments) ? o.attachments.slice() : [],
-      },
-    });
+    // Original files ride along with the FIRST section only.
+    const sectionAttachments =
+      i === 0 && Array.isArray(o.attachments) ? o.attachments.filter(Boolean) : [];
+
+    // 1. reading activity — an interactive lesson by default, a plain page only
+    //    when the caller opts out or the text yields no teachable blocks.
+    const lessonBlocks = interactive
+      ? buildLessonBlocks(chunk.text, { language: lang, attachments: sectionAttachments })
+      : [];
+
+    if (lessonBlocks.length > 0) {
+      activities.push({
+        id: genId('act'),
+        type: 'lesson',
+        title: (lang === 'en' ? 'Lesson: ' : 'Materi: ') + chunkTitle,
+        lesson: { blocks: lessonBlocks },
+      });
+    } else {
+      activities.push({
+        id: genId('act'),
+        type: 'page',
+        title: (lang === 'en' ? 'Read: ' : 'Materi: ') + chunkTitle,
+        page: { content: chunk.text, attachments: sectionAttachments.slice() },
+      });
+    }
 
     // 2. quiz
     if (includeQuiz) {
@@ -598,6 +621,28 @@ export function buildCourseFromSplit(split: SplitResult, opts?: BuildOptions): B
           type: 'checklist',
           title: (lang === 'en' ? 'Summary: ' : 'Ringkasan: ') + chunkTitle,
           checklist: { items },
+        });
+      }
+    }
+
+    // 4. source files — the lesson embeds images as blocks, but a PDF/DOCX the
+    //    learner attached must still be reachable somewhere in the course.
+    if (lessonBlocks.length > 0) {
+      const leftovers = sectionAttachments.filter(
+        (a) => attachmentKind(a.mimeType, a.name) !== 'image',
+      );
+      if (leftovers.length > 0) {
+        activities.push({
+          id: genId('act'),
+          type: 'page',
+          title: lang === 'en' ? 'Source files' : 'Berkas Sumber',
+          page: {
+            content:
+              lang === 'en'
+                ? 'The original file this lesson was generated from.'
+                : 'Berkas asli yang menjadi sumber materi ini.',
+            attachments: leftovers.slice(),
+          },
         });
       }
     }

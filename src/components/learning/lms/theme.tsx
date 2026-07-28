@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, HelpCircle, ClipboardCheck, CheckSquare, UploadCloud, MessageSquare } from 'lucide-react';
+import { FileText, HelpCircle, ClipboardCheck, CheckSquare, UploadCloud, MessageSquare, Sparkles } from 'lucide-react';
 import type { ActivityType } from './types';
 
 export interface ActivityMeta {
@@ -18,6 +18,12 @@ export const ACTIVITY_META: Record<ActivityType, ActivityMeta> = {
     Icon: (props) => <FileText {...props} />,
     tile: 'bg-blue-500',
     accent: 'text-blue-500',
+  },
+  lesson: {
+    labelKey: 'lmsActLesson',
+    Icon: (props) => <Sparkles {...props} />,
+    tile: 'bg-brand-orange',
+    accent: 'text-brand-orange',
   },
   quiz: {
     labelKey: 'lmsActQuiz',

@@ -11,7 +11,14 @@ export interface Attachment {
   dataBase64?: string;
 }
 
-export type ActivityType = 'page' | 'quiz' | 'assessment' | 'checklist' | 'assignment' | 'forum';
+export type ActivityType =
+  | 'page'
+  | 'lesson'
+  | 'quiz'
+  | 'assessment'
+  | 'checklist'
+  | 'assignment'
+  | 'forum';
 
 export interface QuizOption {
   id: string;
@@ -50,6 +57,97 @@ export interface AssessmentResult {
 export interface ChecklistItem {
   id: string;
   text: string;
+}
+
+// ---------------------------------------------------------------------------
+// Lesson (Coursiv-style, one interactive block at a time)
+// ---------------------------------------------------------------------------
+
+export type LessonBlockType =
+  | 'text'
+  | 'keypoint'
+  | 'image'
+  | 'check'
+  | 'flashcard'
+  | 'match'
+  | 'fillblank'
+  | 'reflect';
+
+export interface LessonBlockBase {
+  id: string;
+  type: LessonBlockType;
+}
+
+export interface TextBlock extends LessonBlockBase {
+  type: 'text';
+  title?: string;
+  body: string;
+}
+
+export interface KeypointBlock extends LessonBlockBase {
+  type: 'keypoint';
+  title?: string;
+  points: string[];
+}
+
+export interface ImageBlock extends LessonBlockBase {
+  type: 'image';
+  attachment: Attachment;
+  caption?: string;
+}
+
+export interface CheckBlock extends LessonBlockBase {
+  type: 'check';
+  question: string;
+  options: QuizOption[];
+  correctOptionId: string;
+  explanation?: string;
+}
+
+export interface FlashcardBlock extends LessonBlockBase {
+  type: 'flashcard';
+  front: string;
+  back: string;
+}
+
+export interface MatchPair {
+  id: string;
+  left: string;
+  right: string;
+}
+
+export interface MatchBlock extends LessonBlockBase {
+  type: 'match';
+  prompt?: string;
+  pairs: MatchPair[];
+}
+
+export interface FillBlankBlock extends LessonBlockBase {
+  type: 'fillblank';
+  /** the gap is written as "___" */
+  sentence: string;
+  answer: string;
+  options: string[];
+}
+
+export interface ReflectBlock extends LessonBlockBase {
+  type: 'reflect';
+  prompt: string;
+  placeholder?: string;
+}
+
+export type LessonBlock =
+  | TextBlock
+  | KeypointBlock
+  | ImageBlock
+  | CheckBlock
+  | FlashcardBlock
+  | MatchBlock
+  | FillBlankBlock
+  | ReflectBlock;
+
+export interface LessonActivity {
+  blocks: LessonBlock[];
 }
 
 export interface PageActivity {
@@ -119,6 +217,7 @@ export interface Activity {
   title: string;
   description?: string;
   page?: PageActivity;
+  lesson?: LessonActivity;
   quiz?: QuizActivity;
   assessment?: AssessmentActivity;
   checklist?: ChecklistActivity;
@@ -161,8 +260,17 @@ export interface AssessmentProgress {
   answers: Record<string, string>; // questionId -> optionId
 }
 
+export interface LessonProgress {
+  /** index of the block the learner is currently on */
+  index: number;
+  answers: Record<string, string>; // blockId -> chosen answer
+  notes?: Record<string, string>; // blockId -> free-text reflection
+  completed: boolean;
+}
+
 export interface CourseProgress {
   completion: Record<string, boolean>; // activityId -> completed
+  lesson?: Record<string, LessonProgress>; // activityId -> lesson progress
   quiz: Record<string, QuizProgress>; // activityId -> quiz result
   assessment: Record<string, AssessmentProgress>; // activityId -> assessment result
   checklist: Record<string, Record<string, boolean>>; // activityId -> (itemId -> checked)

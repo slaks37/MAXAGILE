@@ -17,6 +17,8 @@ import type {
   CourseFileV3,
   CourseProgress,
   ForumPost,
+  LessonBlock,
+  LessonBlockType,
   ProgressMap,
   QuizQuestion,
   Section,
@@ -84,7 +86,18 @@ export function attachmentKind(mimeType: string, name: string): AttachmentKind {
 // Row / shape normalization
 // ---------------------------------------------------------------------------
 
-const ACTIVITY_TYPES: ActivityType[] = ['page', 'quiz', 'assessment', 'checklist', 'assignment', 'forum'];
+const ACTIVITY_TYPES: ActivityType[] = ['page', 'lesson', 'quiz', 'assessment', 'checklist', 'assignment', 'forum'];
+
+const LESSON_BLOCK_TYPES: LessonBlockType[] = [
+  'text',
+  'keypoint',
+  'image',
+  'check',
+  'flashcard',
+  'match',
+  'fillblank',
+  'reflect',
+];
 
 function asObj(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -108,6 +121,75 @@ function normalizeAttachment(raw: unknown, idx: number): Attachment {
   if (typeof a.dataBase64 === 'string' && a.dataBase64) att.dataBase64 = a.dataBase64;
   void idx;
   return att;
+}
+
+/**
+ * Rebuild one interactive lesson block from stored JSON.
+ *
+ * Returns null for anything unrecognisable so a single corrupt block cannot
+ * take down the whole lesson. Every branch fills in the fields its renderer
+ * relies on, because a half-shaped block would crash the player.
+ */
+function normalizeLessonBlock(raw: unknown): LessonBlock | null {
+  const b = asObj(raw);
+  const type = b.type as LessonBlockType;
+  if (!LESSON_BLOCK_TYPES.includes(type)) return null;
+  const id = str(b.id) || genId('blk');
+  const strings = (v: unknown): string[] =>
+    Array.isArray(v) ? v.map((x) => str(x)).filter(Boolean) : [];
+
+  switch (type) {
+    case 'text':
+      return { id, type, title: str(b.title) || undefined, body: str(b.body) };
+    case 'keypoint':
+      return { id, type, title: str(b.title) || undefined, points: strings(b.points) };
+    case 'image':
+      return {
+        id,
+        type,
+        attachment: normalizeAttachment(b.attachment, 0),
+        caption: str(b.caption) || undefined,
+      };
+    case 'check': {
+      const options = Array.isArray(b.options)
+        ? b.options.map((o) => {
+            const oo = asObj(o);
+            return { id: str(oo.id) || genId('opt'), text: str(oo.text) };
+          })
+        : [];
+      return {
+        id,
+        type,
+        question: str(b.question),
+        options,
+        correctOptionId: str(b.correctOptionId),
+        explanation: str(b.explanation) || undefined,
+      };
+    }
+    case 'flashcard':
+      return { id, type, front: str(b.front), back: str(b.back) };
+    case 'match': {
+      const pairs = Array.isArray(b.pairs)
+        ? b.pairs.map((p) => {
+            const pp = asObj(p);
+            return { id: str(pp.id) || genId('pair'), left: str(pp.left), right: str(pp.right) };
+          })
+        : [];
+      return { id, type, prompt: str(b.prompt) || undefined, pairs };
+    }
+    case 'fillblank':
+      return {
+        id,
+        type,
+        sentence: str(b.sentence),
+        answer: str(b.answer),
+        options: strings(b.options),
+      };
+    case 'reflect':
+      return { id, type, prompt: str(b.prompt), placeholder: str(b.placeholder) || undefined };
+    default:
+      return null;
+  }
 }
 
 function normalizeQuizQuestion(raw: unknown): QuizQuestion {
@@ -177,6 +259,15 @@ function normalizeActivity(raw: unknown): Activity {
       content: str(p.content),
       attachments: Array.isArray(p.attachments)
         ? p.attachments.map((x, i) => normalizeAttachment(x, i))
+        : [],
+    };
+  } else if (type === 'lesson') {
+    const l = asObj(a.lesson);
+    activity.lesson = {
+      blocks: Array.isArray(l.blocks)
+        ? l.blocks
+            .map(normalizeLessonBlock)
+            .filter((b): b is LessonBlock => b !== null)
         : [],
     };
   } else if (type === 'quiz') {

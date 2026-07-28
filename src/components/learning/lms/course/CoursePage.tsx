@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ChevronDown,
@@ -22,6 +22,7 @@ import { ACTIVITY_META } from '../theme';
 import { useEditMode } from '../EditModeContext';
 import { useLanguage } from '../../../../i18n/LanguageContext';
 import { PageView } from '../activities/PageView';
+import { LessonPlayer } from '../activities/LessonPlayer';
 import { QuizPlayer } from '../activities/QuizPlayer';
 import { AssessmentPlayer } from '../activities/AssessmentPlayer';
 import { ChecklistPlayer } from '../activities/ChecklistPlayer';
@@ -34,18 +35,31 @@ import { CertificateModal } from './CertificateModal';
 import { DuolingoPathView } from './DuolingoPathView';
 import { CourseExportModal } from '../editors/CourseExportModal';
 import { BarChart3, Award, Sparkles, Layers, Download } from 'lucide-react';
-import type { AssignmentSubmission, ForumPost, ForumReply } from '../types';
+import type { AssignmentSubmission, ForumPost, ForumReply, LessonProgress } from '../types';
 
 function tr(t: (k: string) => string, key: string, fallback: string): string {
   const v = t(key);
   return v === key ? fallback : v;
 }
 
+/** Indonesian fallbacks so an untranslated key never leaks as "LMSACTPAGE". */
+const ACTIVITY_LABEL_FALLBACK: Record<ActivityType, string> = {
+  page: 'Halaman',
+  lesson: 'Pelajaran',
+  quiz: 'Kuis',
+  assessment: 'Asesmen',
+  checklist: 'Ceklis',
+  assignment: 'Tugas',
+  forum: 'Forum',
+};
+
 function emptyActivity(type: ActivityType): Activity {
   const base: Activity = { id: genId('act'), type, title: '', description: '' };
   switch (type) {
     case 'page':
       return { ...base, page: { content: '', attachments: [] } };
+    case 'lesson':
+      return { ...base, lesson: { blocks: [] } };
     case 'quiz':
       return { ...base, quiz: { questions: [], passPercent: 70 } };
     case 'assessment':
@@ -132,11 +146,41 @@ export function CoursePage({ course, progress, onExit, onCourseChange, onProgres
   }
 
   // ---- progress mutations ----
+  // A lesson can persist its state and mark itself complete inside the same
+  // tick, so mutations chain off the last value we emitted rather than off the
+  // `progress` prop, which React has not re-rendered with yet.
+  const progressRef = useRef<CourseProgress>(progress);
+  useEffect(() => {
+    progressRef.current = progress;
+  }, [progress]);
+
   function mutateProgress(up: (cp: CourseProgress) => CourseProgress) {
-    onProgressChange({ ...up(progress), updatedAt: new Date().toISOString() });
+    const next: CourseProgress = { ...up(progressRef.current), updatedAt: new Date().toISOString() };
+    progressRef.current = next;
+    onProgressChange(next);
   }
   function setCompletion(activityId: string, value: boolean) {
     mutateProgress((cp) => ({ ...cp, completion: { ...cp.completion, [activityId]: value } }));
+  }
+  function saveLesson(activityId: string, p: LessonProgress) {
+    mutateProgress((cp) => ({
+      ...cp,
+      lesson: { ...cp.lesson, [activityId]: p },
+      completion: { ...cp.completion, [activityId]: !!p.completed || !!cp.completion[activityId] },
+    }));
+  }
+  function completeLesson(activityId: string) {
+    mutateProgress((cp) => {
+      const prev = cp.lesson?.[activityId];
+      const next: LessonProgress = prev
+        ? { ...prev, completed: true }
+        : { index: 0, answers: {}, completed: true };
+      return {
+        ...cp,
+        lesson: { ...cp.lesson, [activityId]: next },
+        completion: { ...cp.completion, [activityId]: true },
+      };
+    });
   }
   function saveQuiz(activityId: string, percentVal: number, answers: Record<string, string>, passed: boolean) {
     mutateProgress((cp) => ({
@@ -529,7 +573,9 @@ export function CoursePage({ course, progress, onExit, onCourseChange, onProgres
                   })()}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{t(ACTIVITY_META[openAct.type].labelKey)}</p>
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                    {tr(t, ACTIVITY_META[openAct.type].labelKey, ACTIVITY_LABEL_FALLBACK[openAct.type])}
+                  </p>
                   <h3 className="truncate text-lg font-extrabold text-brand-text dark:text-slate-100">{openAct.title}</h3>
                 </div>
               </div>
@@ -550,6 +596,15 @@ export function CoursePage({ course, progress, onExit, onCourseChange, onProgres
                   activity={openAct}
                   completed={!!progress.completion[openAct.id]}
                   onToggleComplete={(next) => setCompletion(openAct.id, next)}
+                />
+              )}
+              {openAct.type === 'lesson' && (
+                <LessonPlayer
+                  activity={openAct}
+                  progress={progress.lesson?.[openAct.id]}
+                  onProgress={(p) => saveLesson(openAct.id, p)}
+                  onComplete={() => completeLesson(openAct.id)}
+                  t={t}
                 />
               )}
               {openAct.type === 'quiz' && (

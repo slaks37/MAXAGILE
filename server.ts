@@ -31,6 +31,13 @@ async function startServer() {
   const uploadsDir = path.join(process.cwd(), 'uploads');
   fs.mkdirSync(uploadsDir, { recursive: true });
   app.use('/uploads', express.static(uploadsDir));
+  // Terminate unmatched /uploads/* here. Without this the request falls through
+  // to the SPA catch-all, which answers a missing attachment with index.html —
+  // so a <iframe>/<img> pointing at a deleted file renders the whole app inside
+  // the course page instead of failing.
+  app.use('/uploads', (req, res) => {
+    res.status(404).json({ error: "File not found" });
+  });
 
   // API Routes
   app.get("/api/health", async (req, res) => {

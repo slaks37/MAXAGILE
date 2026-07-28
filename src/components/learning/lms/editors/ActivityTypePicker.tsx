@@ -8,9 +8,32 @@ function tr(t: (k: string) => string, key: string, fallback: string): string {
   return v === key ? fallback : v;
 }
 
-const TYPE_ORDER: ActivityType[] = ['page', 'quiz', 'assessment', 'checklist', 'assignment', 'forum'];
+const TYPE_ORDER: ActivityType[] = [
+  'lesson',
+  'page',
+  'quiz',
+  'assessment',
+  'checklist',
+  'assignment',
+  'forum',
+];
+
+/** Human labels used until the LMS translation pass lands. */
+const TYPE_LABEL: Record<ActivityType, string> = {
+  lesson: 'Materi Interaktif',
+  page: 'Materi Bacaan',
+  quiz: 'Kuis',
+  assessment: 'Asesmen',
+  checklist: 'Checklist',
+  assignment: 'Tugas',
+  forum: 'Forum Diskusi',
+};
 
 const TYPE_DESC: Record<ActivityType, { key: string; fallback: string }> = {
+  lesson: {
+    key: 'lmsActLessonDesc',
+    fallback: 'Belajar selangkah demi selangkah dengan kuis singkat',
+  },
   page: { key: 'lmsPickPageDesc', fallback: 'Materi bacaan dengan lampiran file.' },
   quiz: { key: 'lmsPickQuizDesc', fallback: 'Pilihan ganda dengan nilai kelulusan.' },
   assessment: { key: 'lmsPickAssessmentDesc', fallback: 'Survei berskor yang menghasilkan profil.' },
@@ -61,7 +84,9 @@ export function ActivityTypePicker({ onPick, onCancel }: ActivityTypePickerProps
                   <meta.Icon className="h-6 w-6" />
                 </div>
                 <div className="min-w-0">
-                  <p className="font-extrabold text-brand-text dark:text-slate-100">{t(meta.labelKey)}</p>
+                  <p className="font-extrabold text-brand-text dark:text-slate-100">
+                    {tr(t, meta.labelKey, TYPE_LABEL[type])}
+                  </p>
                   <p className="mt-0.5 text-xs leading-snug text-slate-500 dark:text-slate-400">
                     {tr(t, desc.key, desc.fallback)}
                   </p>

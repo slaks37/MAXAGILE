@@ -48,8 +48,56 @@ function DownloadCard({ att, t }: { att: Attachment; t: any }) {
   );
 }
 
+type FileState = 'checking' | 'ok' | 'missing';
+
+/**
+ * Verify an attachment really resolves before embedding it.
+ *
+ * A deleted upload used to fall through to the SPA catch-all, so the <iframe>
+ * happily rendered index.html — the whole app nested inside the lesson. We treat
+ * an HTML response as "missing" too, so older servers without the /uploads 404
+ * still degrade to a readable message instead of an app-in-an-app.
+ */
+function useFileAvailability(url: string): FileState {
+  const [state, setState] = React.useState<FileState>('checking');
+  React.useEffect(() => {
+    let alive = true;
+    setState('checking');
+    fetch(url, { method: 'HEAD' })
+      .then((res) => {
+        const type = res.headers.get('content-type') || '';
+        const ok = res.ok && !type.includes('text/html');
+        if (alive) setState(ok ? 'ok' : 'missing');
+      })
+      .catch(() => {
+        if (alive) setState('missing');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [url]);
+  return state;
+}
+
+function MissingFileCard({ att, t }: { att: Attachment; t: any }) {
+  return (
+    <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
+      <p className="text-sm font-bold text-amber-800 dark:text-amber-200">
+        {tr(t, 'lmsFileMissing', 'Berkas materi ini tidak ditemukan lagi di server.')}
+      </p>
+      <p className="mt-1 truncate text-xs text-amber-700 dark:text-amber-300">{att.name}</p>
+    </div>
+  );
+}
+
 function AttachmentBlock({ att, t }: { key?: string; att: Attachment; t: any }) {
   const kind = attachmentKind(att.mimeType, att.name);
+  const embeds = kind === 'image' || kind === 'pdf' || kind === 'video' || kind === 'audio';
+  const availability = useFileAvailability(att.url);
+  if (embeds && availability === 'missing') return <MissingFileCard att={att} t={t} />;
+  if (embeds && availability === 'checking') {
+    return <div className="h-24 animate-pulse rounded-2xl border-2 border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800" />;
+  }
   if (kind === 'image') {
     return (
       <figure className="overflow-hidden rounded-2xl border-2 border-slate-200 dark:border-slate-700">

@@ -11,6 +11,7 @@ import {
   Scissors,
 } from 'lucide-react';
 import { MaterialSplitterModal } from './MaterialSplitterModal';
+import { LessonEditor } from './LessonEditor';
 import { MaterialChunk } from '../materialSplitter';
 import type {
   Activity,
@@ -46,6 +47,11 @@ export function ActivityEditor({ activity, onSave, onCancel }: ActivityEditorPro
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showSplitter, setShowSplitter] = useState(false);
   const meta = ACTIVITY_META[draft.type];
+
+  // A `lesson` is authored block-by-block: delegate the whole editor.
+  if (activity.type === 'lesson') {
+    return <LessonEditor activity={activity} onSave={onSave} onCancel={onCancel} />;
+  }
 
   function patch(p: Partial<Activity>) {
     setDraft((d) => ({ ...d, ...p }));
