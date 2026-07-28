@@ -17,7 +17,7 @@ export const PM_WATERFALL: Course = {
   id: 'pm-waterfall',
   title: 'Waterfall: Rencana Dulu, Kerja Kemudian',
   summary:
-    'Cara kerja berurutan yang dipakai orang membangun rumah, mengurus izin, dan menggelar pernikahan. Anda akan belajar tahapannya dalam bahasa sehari-hari, cara menyusun rencana yang benar-benar bisa dipakai, kapan cara ini justru pilihan terbaik, dan kapan sebaiknya tidak dipakai.',
+    'Cara kerja berurutan — seperti membangun rumah atau menyiapkan pernikahan. Anda belajar menyusun rencana yang benar-benar dipakai, dan kapan cara ini cocok atau justru menyusahkan.',
   category: 'Manajemen Proyek',
   color: 'from-violet-500 to-indigo-400',
   sections: [

@@ -91,9 +91,14 @@ export function CoursePage({ course, progress, onExit, onCourseChange, onProgres
   const [showGradebook, setShowGradebook] = useState(false);
   const [showCertificate, setShowCertificate] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [viewMode, setViewMode] = useState<'topics' | 'duolingo'>(
-    course.title?.toLowerCase().includes('mini-course') ? 'duolingo' : 'topics'
-  );
+  // Learners always get the journey; the flat topic list is an editing view.
+  const [viewMode, setViewMode] = useState<'topics' | 'duolingo'>('duolingo');
+
+  useEffect(() => {
+    // Leaving edit mode must not strand the user on a view whose switcher is
+    // now hidden.
+    if (!editMode) setViewMode('duolingo');
+  }, [editMode]);
 
   const percent = courseProgressPercent(course, progress);
 
@@ -181,6 +186,9 @@ export function CoursePage({ course, progress, onExit, onCourseChange, onProgres
         completion: { ...cp.completion, [activityId]: true },
       };
     });
+    // "Selesai" has to actually dismiss the lesson — without this the learner
+    // taps it and nothing appears to happen.
+    setOpenActivity(null);
   }
   function saveQuiz(activityId: string, percentVal: number, answers: Record<string, string>, passed: boolean) {
     mutateProgress((cp) => ({
@@ -256,18 +264,27 @@ export function CoursePage({ course, progress, onExit, onCourseChange, onProgres
     <div className="animate-in fade-in">
       {/* header */}
       <div className={`rounded-3xl border-2 border-b-4 border-slate-200 bg-gradient-to-br ${course.color} p-6 text-white shadow-lg dark:border-slate-700`}>
-        <button
-          type="button"
-          onClick={onExit}
-          className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/20 px-4 py-1.5 text-sm font-bold text-white backdrop-blur transition hover:bg-white/30 cursor-pointer"
-        >
-          <ArrowLeft className="h-4 w-4" /> {tr(t, 'lmsBackToCatalog', 'Kembali ke Daftar Kelas')}
-        </button>
-        <span className="inline-block rounded-full bg-white/25 px-3 py-1 text-xs font-extrabold uppercase tracking-wide">
-          {course.category}
-        </span>
-        <h1 className="mt-3 text-3xl font-extrabold leading-tight">{course.title}</h1>
-        {course.summary && <p className="mt-2 max-w-2xl text-sm text-white/90">{course.summary}</p>}
+        {/* One tidy row: leaving the course on the left, where it belongs, and
+            the category as a quiet label on the right. */}
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={onExit}
+            className="inline-flex shrink-0 items-center gap-2 rounded-full bg-white/20 px-4 py-2 text-sm font-bold text-white backdrop-blur transition hover:bg-white/30 cursor-pointer"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">{tr(t, 'lmsBackToCatalog', 'Kembali ke Daftar Kelas')}</span>
+            <span className="sm:hidden">{tr(t, 'lmsBack', 'Kembali')}</span>
+          </button>
+          <span className="truncate rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-white/80">
+            {course.category}
+          </span>
+        </div>
+
+        <h1 className="text-3xl font-extrabold leading-tight sm:text-4xl">{course.title}</h1>
+        {course.summary && (
+          <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-white/90">{course.summary}</p>
+        )}
 
         <div className="mt-5">
           <div className="mb-1.5 flex items-center justify-between text-xs font-bold text-white/90">
@@ -312,29 +329,32 @@ export function CoursePage({ course, progress, onExit, onCourseChange, onProgres
             </button>
           </div>
 
-          {/* View mode switcher */}
-          <div className="flex items-center gap-1 rounded-2xl bg-black/20 p-1 backdrop-blur">
-            <button
-              type="button"
-              onClick={() => setViewMode('topics')}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-extrabold transition cursor-pointer ${
-                viewMode === 'topics' ? 'bg-white text-slate-900 shadow' : 'text-white/80 hover:text-white'
-              }`}
-            >
-              <Layers className="h-3.5 w-3.5" />
-              Daftar Topik
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('duolingo')}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-extrabold transition cursor-pointer ${
-                viewMode === 'duolingo' ? 'bg-amber-400 text-slate-950 shadow' : 'text-white/80 hover:text-white'
-              }`}
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              Jalur Duolingo
-            </button>
-          </div>
+          {/* View mode switcher. The flat topic list is an authoring aid, so it
+              is only offered while editing — learners just follow the journey. */}
+          {editMode && (
+            <div className="flex items-center gap-1 rounded-2xl bg-black/20 p-1 backdrop-blur">
+              <button
+                type="button"
+                onClick={() => setViewMode('topics')}
+                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-extrabold transition cursor-pointer ${
+                  viewMode === 'topics' ? 'bg-white text-slate-900 shadow' : 'text-white/80 hover:text-white'
+                }`}
+              >
+                <Layers className="h-3.5 w-3.5" />
+                {tr(t, 'lmsTopicList', 'Daftar Topik')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('duolingo')}
+                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-extrabold transition cursor-pointer ${
+                  viewMode === 'duolingo' ? 'bg-amber-400 text-slate-950 shadow' : 'text-white/80 hover:text-white'
+                }`}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                {tr(t, 'lmsYourJourney', 'Your Journey')}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

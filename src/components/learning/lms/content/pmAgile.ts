@@ -19,7 +19,7 @@ export const PM_AGILE: Course = {
   id: 'pm-agile',
   title: 'Scrum & Kanban: Cara Kerja Lincah',
   summary:
-    'Cara mengerjakan sesuatu ketika kebutuhannya belum jelas di awal: kerjakan sepotong, perlihatkan, perbaiki, ulangi. Mengenal Scrum lewat cerita renovasi rumah dan dapur katering, lalu Kanban lewat alur dapur restoran dan laundry. Ditutup dengan panduan jujur memilih antara cara berurutan (Waterfall), Scrum, dan Kanban.',
+    'Untuk pekerjaan yang belum jelas di awal: kerjakan sepotong, perlihatkan, perbaiki, ulangi. Scrum lewat cerita renovasi rumah, Kanban lewat alur dapur restoran — plus panduan jujur memilih di antara keduanya.',
   category: 'Manajemen Proyek',
   color: 'from-emerald-500 to-teal-400',
   sections: [

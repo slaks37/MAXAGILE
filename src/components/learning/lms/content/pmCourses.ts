@@ -32,7 +32,7 @@ const PM_BASICS: Course = {
   id: 'pm-basics',
   title: 'Dasar Manajemen Proyek',
   summary:
-    'Pengantar santai untuk siapa saja — guru, pemilik toko, panitia acara, staf kantor. Apa itu proyek, kenapa perlu dikelola, dan bagaimana menjaga pekerjaan besar supaya tidak berantakan. Tanpa istilah teknis yang bikin pusing.',
+    'Buat guru, pemilik toko, panitia acara, dan staf kantor. Kita bahas apa itu proyek dan cara menjaga pekerjaan besar tetap rapi — pakai bahasa sehari-hari.',
   category: 'Manajemen Proyek',
   color: 'from-blue-500 to-cyan-400',
   sections: [
