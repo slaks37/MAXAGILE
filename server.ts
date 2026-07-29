@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { randomUUID } from "crypto";
+import { randomUUID, randomBytes, scrypt, timingSafeEqual } from "crypto";
 import { execFile } from "child_process";
 import { createServer as createViteServer } from "vite";
 import { PrismaClient } from "@prisma/client";
@@ -21,6 +21,120 @@ process.on("unhandledRejection", (reason) => {
   console.error("Unhandled promise rejection:", reason);
 });
 
+// The generated Prisma client only knows about the models that existed the last
+// time `prisma generate` ran. Session / TaskDependency / CustomField (and the
+// new User.color, WorkItem.isMilestone/customFields columns) only appear after
+// the schema is pushed, so reach them through this untyped alias — same trick
+// already used for `prisma.course` above.
+const db = prisma as any;
+
+// ---------------------------------------------------------------------------
+// Auth helpers (no auth library on purpose — the app has to stay light)
+// ---------------------------------------------------------------------------
+
+const SESSION_COOKIE = "maxagile_session";
+const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
+
+// Palette used to give each account a distinct avatar colour.
+const USER_COLORS = [
+  "#F3A733", "#009688", "#3B82F6", "#EC4899", "#8B5CF6",
+  "#EF4444", "#10B981", "#F59E0B", "#06B6D4", "#6366F1",
+];
+
+/** Cookies come in as one header string; parse it by hand (no cookie-parser). */
+function parseCookies(header?: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!header) return out;
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) continue;
+    const key = part.slice(0, eq).trim();
+    if (!key) continue;
+    const raw = part.slice(eq + 1).trim();
+    try {
+      out[key] = decodeURIComponent(raw);
+    } catch {
+      out[key] = raw;
+    }
+  }
+  return out;
+}
+
+/** "<saltHex>:<hashHex>" using Node's built-in scrypt. */
+function hashPassword(password: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const salt = randomBytes(16);
+    scrypt(password, salt, 64, (err, derived) => {
+      if (err) return reject(err);
+      resolve(`${salt.toString("hex")}:${derived.toString("hex")}`);
+    });
+  });
+}
+
+/** Constant-time comparison; never throws, just answers false on malformed input. */
+function verifyPassword(password: string, stored: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (!stored || typeof stored !== "string" || !stored.includes(":")) return resolve(false);
+    const [saltHex, hashHex] = stored.split(":");
+    const salt = Buffer.from(saltHex || "", "hex");
+    const expected = Buffer.from(hashHex || "", "hex");
+    if (salt.length === 0 || expected.length === 0) return resolve(false);
+    scrypt(password, salt, expected.length, (err, derived) => {
+      if (err) return resolve(false);
+      try {
+        resolve(timingSafeEqual(derived, expected));
+      } catch {
+        resolve(false);
+      }
+    });
+  });
+}
+
+/** Strip the password hash before anything leaves the process. */
+function publicUser(user: any) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    username: user.username,
+    name: user.name,
+    color: user.color || "#F3A733",
+    role: user.role,
+  };
+}
+
+function setSessionCookie(res: any, token: string) {
+  res.setHeader(
+    "Set-Cookie",
+    `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_MAX_AGE_SECONDS}`
+  );
+}
+
+function clearSessionCookie(res: any) {
+  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+}
+
+async function createSession(userId: string): Promise<string> {
+  const token = randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000);
+  await db.session.create({ data: { userId, token, expiresAt } });
+  return token;
+}
+
+/** Resolve the signed-in user from the session cookie, or null. */
+async function getUserFromRequest(req: any) {
+  const token = parseCookies(req.headers?.cookie)[SESSION_COOKIE];
+  if (!token) return null;
+  const session = await db.session.findUnique({ where: { token }, include: { user: true } });
+  if (!session) return null;
+  if (new Date(session.expiresAt).getTime() <= Date.now()) {
+    // Opportunistic housekeeping: sweep every stale row while we are here so
+    // the table cannot grow without bound on a long-lived install.
+    await db.session.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+    return null;
+  }
+  return session.user;
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -37,6 +151,138 @@ async function startServer() {
   // the course page instead of failing.
   app.use('/uploads', (req, res) => {
     res.status(404).json({ error: "File not found" });
+  });
+
+  // -------------------------------------------------------------------------
+  // Auth gate — sits in front of every /api route below it.
+  // -------------------------------------------------------------------------
+  app.use(async (req, res, next) => {
+    try {
+      if (!req.path.startsWith("/api/")) return next();
+
+      const user = await getUserFromRequest(req);
+      if (user) (req as any).user = user;
+
+      // Always reachable: the health probe and the auth endpoints themselves
+      // (otherwise nobody could ever log in).
+      if (req.path === "/api/health" || req.path.startsWith("/api/auth/")) return next();
+      if (user) return next();
+
+      // Bootstrap mode: a brand new install has no accounts yet, so there is
+      // nobody who *could* be signed in. Locking the API here would lock the
+      // owner out of their own data before they ever create an account.
+      const userCount = await prisma.user.count();
+      if (userCount === 0) return next();
+
+      return res.status(401).json({ error: "unauthorized" });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ error: "Auth check failed" });
+    }
+  });
+
+  // Auth
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { username, name, password, color } = req.body || {};
+      if (!username || !name || !password) {
+        return res.status(400).json({ error: "username, name and password are required" });
+      }
+      const cleanUsername = String(username).trim().toLowerCase();
+      if (!cleanUsername) return res.status(400).json({ error: "username, name and password are required" });
+
+      const existing = await prisma.user.findUnique({ where: { username: cleanUsername } });
+      if (existing) return res.status(409).json({ error: "Username already taken" });
+
+      // First account on a fresh install owns the place.
+      const userCount = await prisma.user.count();
+      const hashed = await hashPassword(String(password));
+      const user = await db.user.create({
+        data: {
+          username: cleanUsername,
+          name: String(name),
+          password: hashed,
+          role: userCount === 0 ? "ADMIN" : "USER",
+          color: color || USER_COLORS[userCount % USER_COLORS.length],
+        },
+      });
+
+      const token = await createSession(user.id);
+      setSessionCookie(res, token);
+      res.status(201).json({ user: publicUser(user) });
+    } catch (error) {
+      // A racing double-submit trips the unique index rather than the check above.
+      if ((error as any)?.code === "P2002") return res.status(409).json({ error: "Username already taken" });
+      console.error(error);
+      res.status(500).json({ error: "Registration failed" });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, password } = req.body || {};
+      if (!username || !password) return res.status(401).json({ error: "Invalid credentials" });
+
+      const user = await prisma.user.findUnique({
+        where: { username: String(username).trim().toLowerCase() },
+      });
+      // Same generic answer for unknown user and wrong password — do not leak
+      // which usernames exist.
+      if (!user) return res.status(401).json({ error: "Invalid credentials" });
+
+      const ok = await verifyPassword(String(password), user.password);
+      if (!ok) return res.status(401).json({ error: "Invalid credentials" });
+
+      const token = await createSession(user.id);
+      setSessionCookie(res, token);
+      res.json({ user: publicUser(user) });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  app.post("/api/auth/logout", async (req, res) => {
+    try {
+      const token = parseCookies(req.headers?.cookie)[SESSION_COOKIE];
+      if (token) await db.session.deleteMany({ where: { token } });
+      clearSessionCookie(res);
+      res.json({ success: true });
+    } catch (error) {
+      console.error(error);
+      // Still clear the cookie: the client should end up signed out regardless.
+      clearSessionCookie(res);
+      res.status(500).json({ error: "Logout failed" });
+    }
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    try {
+      const userCount = await prisma.user.count();
+      // Empty user table => first run. Answer 200 so the UI can show the
+      // "create your account" screen instead of a login wall.
+      if (userCount === 0) return res.json({ needsSetup: true, user: null });
+
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ error: "unauthorized" });
+      res.json({ user: publicUser(user) });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Failed to get current user" });
+    }
+  });
+
+  app.get("/api/users", async (req, res) => {
+    try {
+      const users = await db.user.findMany({
+        select: { id: true, username: true, name: true, color: true, role: true },
+        orderBy: { name: "asc" },
+      });
+      res.json(users);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Failed to get users" });
+    }
   });
 
   // API Routes
@@ -196,15 +442,124 @@ async function startServer() {
   });
 
   app.get("/api/workspaces/:id", async (req, res) => {
-    const workspace = await prisma.workspace.findUnique({
-      where: { id: req.params.id },
-      include: {
-        statuses: { orderBy: { order: 'asc' } },
-        workItems: { include: { status: true } }
+    try {
+      const workspace = await db.workspace.findUnique({
+        where: { id: req.params.id },
+        include: {
+          statuses: { orderBy: { order: 'asc' } },
+          customFields: { orderBy: { order: 'asc' } },
+          workItems: {
+            include: {
+              status: true,
+              assignee: { select: { id: true, name: true, color: true } },
+              // Rows where this item is the blocked side, i.e. what it waits for.
+              blockedBy: { select: { blockingId: true } },
+            }
+          }
+        }
+      });
+      if (!workspace) return res.status(404).json({ error: "Workspace not found" });
+
+      // Flatten the join rows to the plain `blockedBy: string[]` the client expects.
+      res.json({
+        ...workspace,
+        workItems: (workspace.workItems || []).map((item: any) => ({
+          ...item,
+          blockedBy: (item.blockedBy || []).map((dep: any) => dep.blockingId),
+        })),
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Failed to get workspace" });
+    }
+  });
+
+  // Custom fields
+  app.get("/api/workspaces/:id/fields", async (req, res) => {
+    try {
+      const fields = await db.customField.findMany({
+        where: { workspaceId: req.params.id },
+        orderBy: { order: 'asc' },
+      });
+      res.json(fields);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Failed to get custom fields" });
+    }
+  });
+
+  app.post("/api/workspaces/:id/fields", async (req, res) => {
+    try {
+      const { name, type, options, order } = req.body || {};
+      if (!name) return res.status(400).json({ error: "name is required" });
+
+      // `options` only means anything for select fields; accept either a real
+      // array or an already-serialised string.
+      const serialisedOptions =
+        options === undefined || options === null
+          ? undefined
+          : typeof options === 'string' ? options : JSON.stringify(options);
+
+      let finalOrder = order;
+      if (finalOrder === undefined || finalOrder === null) {
+        const last = await db.customField.findFirst({
+          where: { workspaceId: req.params.id },
+          orderBy: { order: 'desc' },
+        });
+        finalOrder = last ? last.order + 1 : 0;
       }
-    });
-    if (!workspace) return res.status(404).json({ error: "Workspace not found" });
-    res.json(workspace);
+
+      const field = await db.customField.create({
+        data: {
+          workspaceId: req.params.id,
+          name: String(name),
+          type: type || "text",
+          ...(serialisedOptions !== undefined && { options: serialisedOptions }),
+          order: Number(finalOrder) || 0,
+        },
+      });
+      res.json(field);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Failed to create custom field" });
+    }
+  });
+
+  app.patch("/api/fields/:id", async (req, res) => {
+    try {
+      const { name, type, options, order } = req.body || {};
+      const serialisedOptions =
+        options === undefined
+          ? undefined
+          : options === null || typeof options === 'string' ? options : JSON.stringify(options);
+
+      const field = await db.customField.update({
+        where: { id: req.params.id },
+        data: {
+          ...(name !== undefined && { name: String(name) }),
+          ...(type !== undefined && { type: String(type) }),
+          ...(serialisedOptions !== undefined && { options: serialisedOptions }),
+          ...(order !== undefined && { order: Number(order) || 0 }),
+        },
+      });
+      res.json(field);
+    } catch (error) {
+      if ((error as any)?.code === "P2025") return res.status(404).json({ error: "Field not found" });
+      console.error(error);
+      res.status(500).json({ error: "Failed to update custom field" });
+    }
+  });
+
+  app.delete("/api/fields/:id", async (req, res) => {
+    try {
+      await db.customField.delete({ where: { id: req.params.id } });
+      res.json({ success: true });
+    } catch (error) {
+      // Idempotent: a double-delete (already gone) is not an error for the caller.
+      if ((error as any)?.code === "P2025") return res.json({ success: true });
+      console.error(error);
+      res.status(500).json({ error: "Failed to delete custom field" });
+    }
   });
   
   app.delete("/api/workspaces/:id", async (req, res) => {
@@ -402,7 +757,7 @@ async function startServer() {
   // Work Items
   app.post("/api/workspaces/:id/work-items", async (req, res) => {
     try {
-      const { title, description, priority, statusId, labels } = req.body;
+      const { title, description, priority, statusId, labels, assigneeId, dueDate, isMilestone, customFields } = req.body;
       let finalStatusId = statusId;
       if (!finalStatusId) {
         const firstStatus = await prisma.status.findFirst({
@@ -419,7 +774,9 @@ async function startServer() {
         }
       ];
 
-      const workItem = await prisma.workItem.create({
+      const parsedDue = dueDate ? new Date(dueDate) : null;
+
+      const workItem = await db.workItem.create({
         data: {
           workspaceId: req.params.id,
           title,
@@ -427,11 +784,22 @@ async function startServer() {
           priority: priority || "Sedang",
           statusId: finalStatusId,
           labels,
+          assigneeId: assigneeId || null,
+          dueDate: parsedDue && !isNaN(parsedDue.getTime()) ? parsedDue : null,
+          isMilestone: !!isMilestone,
+          ...(customFields !== undefined && {
+            customFields: typeof customFields === 'string' || customFields === null
+              ? customFields
+              : JSON.stringify(customFields)
+          }),
           activities: JSON.stringify(initialActivities)
         },
-        include: { status: true }
+        include: {
+          status: true,
+          assignee: { select: { id: true, name: true, color: true } },
+        }
       });
-      res.json(workItem);
+      res.json({ ...workItem, blockedBy: [] });
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: "Failed to create work item" });
@@ -527,17 +895,126 @@ async function startServer() {
         }
       }
 
-      req.body.activities = JSON.stringify(activitiesList);
+      const body = req.body || {};
 
-      const workItem = await prisma.workItem.update({
+      if (body.assigneeId !== undefined && body.assigneeId !== existing?.assigneeId) {
+        const newAssignee = body.assigneeId
+          ? await prisma.user.findUnique({ where: { id: body.assigneeId } })
+          : null;
+        activitiesList.push({
+          timestamp: new Date().toISOString(),
+          text: newAssignee ? `Ditugaskan ke '${newAssignee.name}'` : `Penugasan dilepas`
+        });
+      }
+
+      // Only these columns may be written. The handler used to hand `req.body`
+      // straight to Prisma, which blows up the moment a client echoes back a
+      // whole item (id / status object / blockedBy array are not columns).
+      const data: Record<string, any> = { activities: JSON.stringify(activitiesList) };
+      for (const key of ["title", "description", "type", "priority", "labels", "subtasks"]) {
+        if (body[key] !== undefined) data[key] = body[key];
+      }
+      for (const key of ["statusId", "assigneeId", "parentId"]) {
+        if (body[key] !== undefined) data[key] = body[key] || null;
+      }
+      if (body.dueDate !== undefined) {
+        const parsed = body.dueDate ? new Date(body.dueDate) : null;
+        data.dueDate = parsed && !isNaN(parsed.getTime()) ? parsed : null;
+      }
+      if (body.isMilestone !== undefined) data.isMilestone = !!body.isMilestone;
+      if (body.customFields !== undefined) {
+        data.customFields =
+          body.customFields === null || typeof body.customFields === 'string'
+            ? body.customFields
+            : JSON.stringify(body.customFields);
+      }
+
+      const workItem = await db.workItem.update({
         where: { id: req.params.id },
-        data: req.body,
-        include: { status: true }
+        data,
+        include: {
+          status: true,
+          assignee: { select: { id: true, name: true, color: true } },
+          blockedBy: { select: { blockingId: true } },
+        }
       });
-      res.json(workItem);
+      res.json({
+        ...workItem,
+        blockedBy: (workItem.blockedBy || []).map((dep: any) => dep.blockingId),
+      });
     } catch (error) {
+      if ((error as any)?.code === "P2025") return res.status(404).json({ error: "Work item not found" });
       console.error(error);
       res.status(500).json({ error: "Failed to update work item" });
+    }
+  });
+
+  // Task dependencies ("this item waits for that item")
+  //
+  // Walk the existing graph before inserting: if `blockingId` already waits —
+  // directly or through a chain — on `blockedId`, the new edge would close a
+  // loop and the Gantt view would recurse forever laying it out.
+  async function wouldCreateCycle(blockedId: string, blockingId: string): Promise<boolean> {
+    const seen = new Set<string>();
+    const stack: string[] = [blockingId];
+    while (stack.length) {
+      const current = stack.pop() as string;
+      if (current === blockedId) return true;
+      if (seen.has(current)) continue;
+      seen.add(current);
+      const edges = await db.taskDependency.findMany({
+        where: { blockedId: current },
+        select: { blockingId: true },
+      });
+      for (const edge of edges) {
+        if (!seen.has(edge.blockingId)) stack.push(edge.blockingId);
+      }
+    }
+    return false;
+  }
+
+  app.post("/api/work-items/:id/dependencies", async (req, res) => {
+    try {
+      const blockedId = req.params.id;
+      const { blockingId } = req.body || {};
+      if (!blockingId) return res.status(400).json({ error: "blockingId is required" });
+      if (blockingId === blockedId) {
+        return res.status(400).json({ error: "A task cannot depend on itself" });
+      }
+
+      const [blocked, blocking] = await Promise.all([
+        prisma.workItem.findUnique({ where: { id: blockedId }, select: { id: true } }),
+        prisma.workItem.findUnique({ where: { id: blockingId }, select: { id: true } }),
+      ]);
+      if (!blocked || !blocking) return res.status(404).json({ error: "Work item not found" });
+
+      const existing = await db.taskDependency.findFirst({ where: { blockedId, blockingId } });
+      if (existing) return res.status(409).json({ error: "Dependency already exists" });
+
+      if (await wouldCreateCycle(blockedId, blockingId)) {
+        return res.status(400).json({ error: "That would create a circular dependency" });
+      }
+
+      const dependency = await db.taskDependency.create({ data: { blockedId, blockingId } });
+      res.json(dependency);
+    } catch (error) {
+      if ((error as any)?.code === "P2002") return res.status(409).json({ error: "Dependency already exists" });
+      console.error(error);
+      res.status(500).json({ error: "Failed to create dependency" });
+    }
+  });
+
+  app.delete("/api/work-items/:id/dependencies/:blockingId", async (req, res) => {
+    try {
+      // deleteMany, not delete: removing an edge that is already gone should
+      // still report success.
+      await db.taskDependency.deleteMany({
+        where: { blockedId: req.params.id, blockingId: req.params.blockingId },
+      });
+      res.json({ success: true });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Failed to delete dependency" });
     }
   });
 

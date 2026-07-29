@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, CheckSquare, Calendar as CalendarIcon, Settings, FolderKanban, Plus, Menu, X, ChevronLeft, ChevronRight, Search, TrendingUp, AlertTriangle, Clock, Download, Upload, Trash2, Moon, Sun, Monitor, BarChart3, Zap } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, Calendar as CalendarIcon, Settings, FolderKanban, Plus, Menu, X, ChevronLeft, ChevronRight, Search, TrendingUp, AlertTriangle, Clock, Download, Upload, Trash2, Moon, Sun, Monitor, BarChart3, Zap, LogOut, Loader2 } from 'lucide-react';
 import { Workspace, WorkItem } from './types';
 import { WorkspaceView } from './components/WorkspaceView';
 import { MyTasksView } from './components/MyTasksView';
@@ -13,6 +13,20 @@ import { LearningHub } from './components/learning/LearningHub';
 import { GraduationCap } from 'lucide-react';
 import { useLanguage } from './i18n/LanguageContext';
 import { LanguageSelector } from './components/LanguageSelector';
+import { AuthProvider, useAuth } from './auth/AuthContext';
+import { LoginView } from './components/LoginView';
+
+function tr(t: (k: string) => string, key: string, fallback: string): string {
+  const v = t(key);
+  return v === key ? fallback : v;
+}
+
+function initialsOf(name: string): string {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 
 interface DashboardStats {
   totalWorkspaces: number;
@@ -27,7 +41,16 @@ interface DashboardStats {
 }
 
 export default function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
+  );
+}
+
+function AppShell() {
   const { t } = useLanguage();
+  const { user, loading: authLoading, logout } = useAuth();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeView, setActiveView] = useState<{ type: string; id?: string; name?: string; initialTaskId?: string }>({ type: 'dashboard' });
@@ -63,9 +86,9 @@ export default function App() {
   }, [darkMode]);
 
   useEffect(() => {
-    if (searchQuery.trim() !== "") {
+    if (user && searchQuery.trim() !== "") {
       setSearching(true);
-      fetch('/api/tasks')
+      fetch('/api/tasks', { credentials: 'include' })
         .then(res => res.json())
         .then(data => {
           setAllTasks(data);
@@ -73,7 +96,7 @@ export default function App() {
         })
         .catch(() => setSearching(false));
     }
-  }, [searchQuery]);
+  }, [searchQuery, user]);
 
   const matchedWorkspaces = searchQuery.trim() === "" ? [] : workspaces.filter(ws => 
     ws.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -121,16 +144,17 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!user) return;
     fetchWorkspaces();
     fetchStats();
-  }, []);
+  }, [user]);
 
   // Re-fetch stats when navigating to dashboard
   useEffect(() => {
-    if (activeView.type === 'dashboard') {
+    if (user && activeView.type === 'dashboard') {
       fetchStats();
     }
-  }, [activeView.type]);
+  }, [activeView.type, user]);
 
   const createWorkspace = async () => {
     if (!newWorkspaceName.trim()) return;
@@ -524,6 +548,20 @@ export default function App() {
     }
   };
 
+  // --- Auth gate -------------------------------------------------------------
+  if (authLoading) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-brand-bg dark:bg-gray-900">
+        <Loader2 className="w-7 h-7 text-brand-orange animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginView />;
+  }
+  // ---------------------------------------------------------------------------
+
   return (
     <div className="flex h-screen bg-white dark:bg-gray-900 text-brand-text dark:text-white font-sans overflow-hidden">
       {/* Mobile Sidebar Overlay */}
@@ -603,13 +641,38 @@ export default function App() {
           )}
         </nav>
         
-        <div className="p-3 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-          <NavItem collapsed={sidebarCollapsed} 
-            icon={<Settings size={18} />} 
-            label={t('settings')} 
+        <div className="p-3 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 space-y-2">
+          <NavItem collapsed={sidebarCollapsed}
+            icon={<Settings size={18} />}
+            label={t('settings')}
             active={activeView.type === 'settings'}
             onClick={() => handleNavClick({ type: 'settings' })}
           />
+
+          {/* Signed-in user chip */}
+          <div className={`flex items-center gap-2 rounded-2xl bg-gray-50 dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 ${sidebarCollapsed ? 'flex-col p-2' : 'p-2'}`}>
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-extrabold text-white shrink-0 shadow-sm"
+              style={{ backgroundColor: user.color || '#F3A733' }}
+              title={user.name}
+            >
+              {initialsOf(user.name)}
+            </div>
+            {!sidebarCollapsed && (
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-extrabold text-brand-text dark:text-white truncate leading-tight">{user.name}</p>
+                <p className="text-[10px] font-bold text-gray-400 truncate leading-tight">@{user.username}</p>
+              </div>
+            )}
+            <button
+              onClick={() => { logout(); setMobileMenuOpen(false); }}
+              title={tr(t, 'authLogout', 'Keluar')}
+              aria-label={tr(t, 'authLogout', 'Keluar')}
+              className="shrink-0 p-2 rounded-xl text-gray-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors cursor-pointer"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
         </div>
       </aside>
 

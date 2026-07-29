@@ -17,6 +17,7 @@ model User {
   username  String   @unique
   password  String
   name      String
+  color     String   @default("#F3A733")
   role      String   @default("USER") // ADMIN, USER
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -25,6 +26,17 @@ model User {
   workItems  WorkItem[]        @relation("Assignee")
   comments   Comment[]
   activities ActivityLog[]
+  sessions   Session[]
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Workspace {
@@ -35,10 +47,11 @@ model Workspace {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  members   WorkspaceMember[]
-  workItems WorkItem[]
-  workflows Workflow[]
-  statuses  Status[]
+  members      WorkspaceMember[]
+  workItems    WorkItem[]
+  workflows    Workflow[]
+  statuses     Status[]
+  customFields CustomField[]
 }
 
 model WorkspaceMember {
@@ -92,6 +105,8 @@ model WorkItem {
   labels      String?
   subtasks    String?
   activities  String?
+  isMilestone Boolean   @default(false)
+  customFields String?  // JSON object keyed by CustomField id
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -101,6 +116,33 @@ model WorkItem {
   parent    WorkItem?  @relation("SubTasks", fields: [parentId], references: [id])
   subTasks  WorkItem[] @relation("SubTasks")
   comments  Comment[]
+
+  // Dependencies: `blockedBy` are the edges where this item waits for another,
+  // `blocking` are the edges where other items wait for this one.
+  blockedBy TaskDependency[] @relation("Blocked")
+  blocking  TaskDependency[] @relation("Blocking")
+}
+
+model TaskDependency {
+  id         String @id @default(uuid())
+  blockedId  String
+  blockingId String
+
+  blocked  WorkItem @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  blocking WorkItem @relation("Blocking", fields: [blockingId], references: [id], onDelete: Cascade)
+
+  @@unique([blockedId, blockingId])
+}
+
+model CustomField {
+  id          String @id @default(uuid())
+  workspaceId String
+  name        String
+  type        String @default("text") // text | number | select | date | checkbox
+  options     String? // JSON string[] used by select
+  order       Int    @default(0)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
 
 model Comment {

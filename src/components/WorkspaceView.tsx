@@ -1,6 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { Workspace, Status, WorkItem } from '../types';
-import { Trash2, Plus, GripVertical, Calendar as CalendarIcon, Flag, Edit2, X, CheckSquare, Clock, LayoutGrid, Star, Sparkles } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Workspace, Status, WorkItem, AppUser, CustomFieldDef } from '../types';
+import { Trash2, Plus, GripVertical, Calendar as CalendarIcon, Flag, Edit2, X, CheckSquare, Clock, LayoutGrid, Star, Sparkles, Diamond, Lock, Columns3, UserRound } from 'lucide-react';
+import { useLanguage } from '../i18n/LanguageContext';
+import { AssigneePicker, Avatar } from './workspace/AssigneePicker';
+import { DependencyEditor } from './workspace/DependencyEditor';
+import { CustomFieldsManager } from './workspace/CustomFieldsManager';
+import { TaskCustomFields, CustomFieldChips } from './workspace/TaskCustomFields';
+import { TaskFilterBar } from './workspace/TaskFilterBar';
+import {
+  tr,
+  parseStoryPoints,
+  parseCustomFieldValues,
+  parseFieldOptions,
+  applyFilters,
+  unfinishedBlockers,
+  EMPTY_FILTERS,
+  FilterState,
+} from './workspace/utils';
 
 interface Props {
   key?: string;
@@ -9,14 +25,6 @@ interface Props {
   onDeleteWorkspace: () => void;
   onWorkspaceRenamed?: (newName: string) => void;
   initialTaskId?: string;
-}
-
-function parseStoryPoints(title: string) {
-  const match = title.match(/^\((\d+)\)\s*(.*)/);
-  if (match) {
-    return { points: match[1], cleanTitle: match[2] };
-  }
-  return { points: null, cleanTitle: title };
 }
 
 function formatActivityDate(isoString: string) {
@@ -35,6 +43,7 @@ function formatActivityDate(isoString: string) {
 }
 
 export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, onWorkspaceRenamed, initialTaskId }: Props) {
+  const { t } = useLanguage();
   const [editingName, setEditingName] = useState(false);
   const [editName, setEditName] = useState(workspaceName);
   const [workspaceData, setWorkspaceData] = useState<{statuses: Status[], workItems: WorkItem[]} | null>(null);
@@ -81,6 +90,23 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
   const [tempSprintDates, setTempSprintDates] = useState("");
   const [tempSprintGoal, setTempSprintGoal] = useState("");
 
+  // Team, custom fields, dependencies, milestone
+  const [users, setUsers] = useState<AppUser[]>([]);
+  const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDef[]>([]);
+  const [showFieldsManager, setShowFieldsManager] = useState(false);
+  const [editTaskAssigneeId, setEditTaskAssigneeId] = useState<string | null>(null);
+  const [editTaskIsMilestone, setEditTaskIsMilestone] = useState(false);
+  const [editTaskCustomFields, setEditTaskCustomFields] = useState<Record<string, any>>({});
+  const [editTaskBlockedBy, setEditTaskBlockedBy] = useState<string[]>([]);
+
+  // Filter / sort / group toolbar
+  const [filters, setFilters] = useState<FilterState>({ ...EMPTY_FILTERS, fieldValues: {} });
+
+  // Gantt dependency connectors (measured after layout)
+  const ganttRef = useRef<any>(null);
+  const ganttBarRefs = useRef<Record<string, any>>({});
+  const [ganttLinks, setGanttLinks] = useState<{ x1: number; y1: number; x2: number; y2: number }[]>([]);
+
   const fetchWorkspace = async () => {
     setLoading(true);
     const res = await fetch(`/api/workspaces/${workspaceId}`);
@@ -91,9 +117,39 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
     setLoading(false);
   };
 
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch('/api/users');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setUsers(data);
+      }
+    } catch (e) {
+      // team list is optional — the board still works without it
+    }
+  };
+
+  const fetchCustomFields = async () => {
+    try {
+      const res = await fetch(`/api/workspaces/${workspaceId}/fields`);
+      if (res.ok) {
+        const data = await res.json();
+        setCustomFieldDefs(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      setCustomFieldDefs([]);
+    }
+  };
+
   useEffect(() => {
     fetchWorkspace();
+    fetchCustomFields();
+    setFilters({ ...EMPTY_FILTERS, fieldValues: {} });
   }, [workspaceId]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
 
   useEffect(() => {
     if (workspaceData && initialTaskId) {
@@ -125,8 +181,118 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
       } catch (err) {
         setEditTaskSubtasks([]);
       }
+      setEditTaskAssigneeId(selectedTask.assigneeId || null);
+      setEditTaskIsMilestone(!!selectedTask.isMilestone);
+      setEditTaskCustomFields(parseCustomFieldValues(selectedTask.customFields));
+      setEditTaskBlockedBy(Array.isArray(selectedTask.blockedBy) ? selectedTask.blockedBy : []);
     }
   }, [selectedTask]);
+
+  // One shared filter/sort pass so every tab shows the same set of tasks.
+  const visibleItems = useMemo(
+    () => applyFilters(workspaceData?.workItems || [], filters, workspaceData?.statuses || []),
+    [workspaceData, filters],
+  );
+
+  // Kanban columns: statuses (default), team members, or a select custom field.
+  const kanbanGroups = useMemo(() => {
+    if (!workspaceData) return [] as any[];
+    const group = filters.group || 'status';
+
+    if (group === 'assignee') {
+      const groups = users.map(u => ({
+        key: u.id,
+        name: u.name,
+        color: u.color,
+        status: null as Status | null,
+        user: u as AppUser | null,
+        items: visibleItems.filter(i => i.assigneeId === u.id),
+      }));
+      groups.push({
+        key: '__unassigned__',
+        name: tr(t, 'wsNoAssignee', 'Tanpa penanggung jawab'),
+        color: '#94a3b8',
+        status: null,
+        user: null,
+        items: visibleItems.filter(i => !i.assigneeId),
+      });
+      return groups;
+    }
+
+    if (group.indexOf('field:') === 0) {
+      const fieldId = group.substring(6);
+      const def = customFieldDefs.find(f => f.id === fieldId);
+      const options = def ? parseFieldOptions(def.options) : [];
+      const groups = options.map(opt => ({
+        key: opt,
+        name: opt,
+        color: '#3b82f6',
+        status: null as Status | null,
+        user: null as AppUser | null,
+        items: visibleItems.filter(i => String(parseCustomFieldValues(i.customFields)[fieldId] || '') === opt),
+      }));
+      groups.push({
+        key: '__empty__',
+        name: tr(t, 'wsFieldEmpty', '— Kosong —'),
+        color: '#94a3b8',
+        status: null,
+        user: null,
+        items: visibleItems.filter(i => {
+          const v = parseCustomFieldValues(i.customFields)[fieldId];
+          return v === undefined || v === null || v === '' || options.indexOf(String(v)) === -1;
+        }),
+      });
+      return groups;
+    }
+
+    return workspaceData.statuses.map(s => ({
+      key: s.id,
+      name: s.name,
+      color: s.color,
+      status: s as Status | null,
+      user: null as AppUser | null,
+      items: visibleItems.filter(i => i.statusId === s.id),
+    }));
+  }, [workspaceData, visibleItems, filters.group, users, customFieldDefs, t]);
+
+  // Measure the gantt bars after layout so blocker connectors line up exactly.
+  useEffect(() => {
+    if (activeTab !== 'waterfall') {
+      setGanttLinks(prev => (prev.length ? [] : prev));
+      return;
+    }
+    const compute = () => {
+      const container = ganttRef.current;
+      if (!container) return;
+      const cRect = container.getBoundingClientRect();
+      const links: { x1: number; y1: number; x2: number; y2: number }[] = [];
+      visibleItems.forEach(item => {
+        const ids = Array.isArray(item.blockedBy) ? item.blockedBy : [];
+        if (ids.length === 0) return;
+        const targetEl = ganttBarRefs.current[item.id];
+        if (!targetEl) return;
+        const tRect = targetEl.getBoundingClientRect();
+        ids.forEach(bid => {
+          const srcEl = ganttBarRefs.current[bid];
+          if (!srcEl) return;
+          const sRect = srcEl.getBoundingClientRect();
+          links.push({
+            x1: sRect.right - cRect.left,
+            y1: sRect.top + sRect.height / 2 - cRect.top,
+            x2: tRect.left - cRect.left,
+            y2: tRect.top + tRect.height / 2 - cRect.top,
+          });
+        });
+      });
+      setGanttLinks(links);
+    };
+    const raf = requestAnimationFrame(compute);
+    window.addEventListener('resize', compute);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', compute);
+    };
+  }, [activeTab, visibleItems, workspaceData]);
 
   const handleDeleteWorkspace = async () => {
     if (confirm("Apakah Anda yakin ingin menghapus ruang kerja ini? Semua data akan hilang.")) {
@@ -216,12 +382,29 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
         dueDate: editTaskDueDate ? new Date(editTaskDueDate).toISOString() : null,
         statusId: editTaskStatusId || null,
         labels: JSON.stringify(editTaskLabels),
-        subtasks: JSON.stringify(editTaskSubtasks)
+        subtasks: JSON.stringify(editTaskSubtasks),
+        assigneeId: editTaskAssigneeId,
+        isMilestone: editTaskIsMilestone,
+        customFields: JSON.stringify(editTaskCustomFields)
       })
     });
 
     setSelectedTask(null);
     fetchWorkspace();
+  };
+
+  /**
+   * Dependencies are saved immediately through their own endpoints, so mirror
+   * the change into the board without touching selectedTask — replacing that
+   * object would reset every unsaved edit in the open modal.
+   */
+  const applyBlockedByLocally = (itemId: string, blockedBy: string[]) => {
+    setEditTaskBlockedBy(blockedBy);
+    setWorkspaceData(prev =>
+      prev
+        ? { ...prev, workItems: prev.workItems.map(i => (i.id === itemId ? { ...i, blockedBy } : i)) }
+        : prev
+    );
   };
 
   const deleteWorkItem = async (itemId: string) => {
@@ -273,10 +456,46 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
     }
   };
 
+  /** Small "waiting on N tasks" chip shown on cards with unfinished blockers. */
+  const renderBlockerChip = (item: WorkItem) => {
+    if (!workspaceData) return null;
+    const waiting = unfinishedBlockers(item, workspaceData.workItems, workspaceData.statuses);
+    if (waiting.length === 0) return null;
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30 shrink-0"
+        title={tr(t, 'wsWaitingOn', 'Menunggu tugas')}
+      >
+        <Lock size={9} />
+        {tr(t, 'wsWaitingCount', 'Menunggu')} {waiting.length}
+      </span>
+    );
+  };
+
+  /** Diamond badge marking a milestone task. */
+  const renderMilestoneBadge = () => (
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-brand-teal/15 text-brand-teal border border-brand-teal/25 shrink-0"
+      title={tr(t, 'wsMilestone', 'Milestone')}
+    >
+      <Diamond size={9} />
+      {tr(t, 'wsMilestone', 'Milestone')}
+    </span>
+  );
+
+  const assigneeOf = (item: WorkItem) => {
+    if (item.assignee) return item.assignee;
+    if (item.assigneeId) {
+      const u = users.find(x => x.id === item.assigneeId);
+      if (u) return { id: u.id, name: u.name, color: u.color };
+    }
+    return null;
+  };
+
   const calculateTotalPoints = () => {
     if (!workspaceData) return 0;
     let total = 0;
-    workspaceData.workItems.forEach(item => {
+    visibleItems.forEach(item => {
       const { points } = parseStoryPoints(item.title);
       if (points) {
         total += parseInt(points, 10);
@@ -364,9 +583,18 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
             )}
             <p className="text-sm text-gray-500 mt-1">Gunakan papan pintar ini untuk mempercepat kemajuan pekerjaan tim Anda.</p>
           </div>
-          <button onClick={handleDeleteWorkspace} className="text-sm font-semibold text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 shadow-sm shrink-0 border border-red-100">
-            <Trash2 size={16} /> Hapus Ruang Kerja
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowFieldsManager(true)}
+              className="text-sm font-semibold text-brand-text dark:text-gray-100 bg-white/80 dark:bg-gray-800 hover:bg-white px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 shadow-sm border border-white dark:border-gray-700 cursor-pointer"
+            >
+              <Columns3 size={16} className="text-brand-orange" /> {tr(t, 'wsCustomFields', 'Kolom Kustom')}
+            </button>
+            <button onClick={handleDeleteWorkspace} className="text-sm font-semibold text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 shadow-sm shrink-0 border border-red-100 cursor-pointer">
+              <Trash2 size={16} /> Hapus Ruang Kerja
+            </button>
+          </div>
         </div>
         
         <div className="mt-8 flex gap-2 overflow-x-auto no-scrollbar">
@@ -390,63 +618,92 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
       </div>
 
       <div className="flex-1 overflow-auto p-8 h-full relative z-10 custom-scrollbar">
+        {/* FILTER / SORT / GROUP BAR — applies to every tab */}
+        <TaskFilterBar
+          users={users}
+          fields={customFieldDefs}
+          filters={filters}
+          onChange={setFilters}
+          totalCount={workspaceData.workItems.length}
+          visibleCount={visibleItems.length}
+          showGrouping={activeTab === 'kanban'}
+        />
+
         {/* TAB KANBAN */}
         {activeTab === 'kanban' && (
           <div className="flex gap-6 items-start h-full pb-8 w-max">
-            {workspaceData.statuses.map(status => {
-              const items = workspaceData.workItems.filter(i => i.statusId === status.id);
+            {kanbanGroups.map((group: any) => {
+              const items = group.items as WorkItem[];
+              const isStatusGroup = !!group.status;
               return (
-                <div 
-                  key={status.id} 
-                  onDragOver={(e) => e.preventDefault()}
+                <div
+                  key={group.key}
+                  onDragOver={(e) => { if (isStatusGroup) e.preventDefault(); }}
                   onDrop={(e) => {
+                    if (!isStatusGroup) return;
                     e.preventDefault();
                     const itemId = e.dataTransfer.getData("itemId");
-                    if (itemId) updateWorkItemStatus(itemId, status.id);
+                    if (itemId) updateWorkItemStatus(itemId, group.status.id);
                   }}
-                  className="bg-white/40 rounded-3xl p-4 w-[320px] flex flex-col max-h-full shrink-0 shadow-sm border border-white/60 backdrop-blur-xl transition-all"
+                  className="bg-white/40 dark:bg-gray-900/40 rounded-3xl p-4 w-[320px] max-w-[88vw] flex flex-col max-h-full shrink-0 shadow-sm border border-white/60 dark:border-gray-700 backdrop-blur-xl transition-all"
                 >
-                  <div className="flex items-center justify-between mb-5 px-1">
-                    <h4 className="font-extrabold text-brand-text flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: status.color }}></div>
-                      {status.name}
+                  <div className="flex items-center justify-between mb-5 px-1 gap-2">
+                    <h4 className="font-extrabold text-brand-text dark:text-gray-100 flex items-center gap-2 min-w-0">
+                      {group.user ? (
+                        <Avatar name={group.user.name} color={group.user.color} size={18} />
+                      ) : (
+                        <div className="w-3 h-3 rounded-full shadow-sm shrink-0" style={{ backgroundColor: group.color }}></div>
+                      )}
+                      <span className="truncate">{group.name}</span>
                     </h4>
-                    <span className="text-xs bg-white/60 text-brand-text px-2.5 py-1 rounded-full font-bold shadow-sm">{items.length}</span>
+                    <span className="text-xs bg-white/60 dark:bg-gray-800 text-brand-text dark:text-gray-100 px-2.5 py-1 rounded-full font-bold shadow-sm shrink-0">{items.length}</span>
                   </div>
-                  
+
                   <div className="flex-1 overflow-y-auto space-y-4 min-h-[100px] pr-1 pb-1 custom-scrollbar">
                     {items.map(item => {
                       const { points, cleanTitle } = parseStoryPoints(item.title);
+                      const person = assigneeOf(item);
                       return (
-                        <div 
-                          key={item.id} 
-                          draggable
+                        <div
+                          key={item.id}
+                          draggable={isStatusGroup}
                           onDragStart={(e) => {
+                            if (!isStatusGroup) return;
                             e.dataTransfer.setData("itemId", item.id);
                             e.dataTransfer.effectAllowed = "move";
                           }}
                           onClick={() => setSelectedTask(item)}
-                          className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl shadow-sm border border-white hover:border-brand-orange/40 hover:shadow-md transition-all group relative cursor-grab active:cursor-grabbing hover:-translate-y-1"
+                          className={`bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-5 rounded-2xl shadow-sm border border-white dark:border-gray-700 hover:border-brand-orange/40 hover:shadow-md transition-all group relative hover:-translate-y-1 ${isStatusGroup ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${item.isMilestone ? 'border-l-4 border-l-brand-teal' : ''}`}
                         >
                           <div className="flex justify-between items-start mb-3 gap-2">
-                            <span className="font-bold text-brand-text text-sm leading-snug flex flex-wrap items-center gap-1.5">
+                            <span className="font-bold text-brand-text dark:text-gray-100 text-sm leading-snug flex flex-wrap items-center gap-1.5 min-w-0">
                               {points && (
                                 <span className="bg-brand-orange/15 text-brand-orange text-[10px] font-extrabold px-1.5 py-0.5 rounded shadow-sm shrink-0 uppercase tracking-wider border border-brand-orange/10">
                                   {points} pts
                                 </span>
                               )}
-                              <span>{cleanTitle}</span>
+                              <span className="break-words">{cleanTitle}</span>
                             </span>
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); deleteWorkItem(item.id); }} 
-                              className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 bg-white rounded-full p-1 shadow-sm"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {person && <Avatar name={person.name} color={person.color} size={22} />}
+                              <button
+                                onClick={(e) => { e.stopPropagation(); deleteWorkItem(item.id); }}
+                                className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-gray-900 rounded-full p-1 shadow-sm cursor-pointer"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </div>
-                          
+
+                          {(item.isMilestone || (item.blockedBy && item.blockedBy.length > 0)) && (
+                            <div className="flex flex-wrap gap-1 mb-2.5">
+                              {item.isMilestone && renderMilestoneBadge()}
+                              {renderBlockerChip(item)}
+                            </div>
+                          )}
+
                           {item.description && (
-                            <p className="text-xs text-gray-500 mb-4 line-clamp-2 leading-relaxed">
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 line-clamp-2 leading-relaxed">
                               {item.description}
                             </p>
                           )}
@@ -454,20 +711,20 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
                           {renderTaskLabels(item.labels)}
 
                           {item.dueDate && (
-                            <div className="flex items-center gap-1 text-[11px] text-gray-400 font-bold mb-3">
+                            <div className="flex items-center gap-1 text-[11px] text-gray-400 dark:text-gray-500 font-bold mb-3">
                               <Clock size={11} className="text-brand-orange" />
                               <span>Batas: {new Date(item.dueDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</span>
                             </div>
                           )}
-                          
-                          <div className="mt-4 flex justify-between items-center">
+
+                          <div className="mt-4 flex justify-between items-center gap-2">
                             <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-widest ${getPriorityColor(item.priority)} flex items-center gap-1 shadow-sm`}>
                               {item.priority === 'Mendesak' && <Flag size={10} />}
                               {item.priority}
                             </span>
-                            
-                            <select 
-                              className="text-xs bg-white/60 border border-white rounded-full px-2 py-1 text-gray-600 hover:text-brand-text cursor-pointer outline-none focus:ring-2 focus:ring-brand-orange/30 font-semibold shadow-sm"
+
+                            <select
+                              className="text-xs bg-white/60 dark:bg-gray-900 border border-white dark:border-gray-700 rounded-full px-2 py-1 text-gray-600 dark:text-gray-300 hover:text-brand-text cursor-pointer outline-none focus:ring-2 focus:ring-brand-orange/30 font-semibold shadow-sm max-w-[130px]"
                               value={item.statusId || ""}
                               onChange={(e) => updateWorkItemStatus(item.id, e.target.value)}
                               onClick={(e) => e.stopPropagation()}
@@ -481,19 +738,21 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
                       );
                     })}
                   </div>
-                  
-                  <button 
-                    onClick={() => { setNewTaskStatusId(status.id); setShowNewTaskModal(true); }}
-                    className="mt-4 w-full py-3 bg-white/40 hover:bg-white/80 border border-white hover:border-white rounded-xl text-gray-600 hover:text-brand-text text-sm font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm"
-                  >
-                    <Plus size={16} /> Tambah Tugas
-                  </button>
+
+                  {isStatusGroup && (
+                    <button
+                      onClick={() => { setNewTaskStatusId(group.status.id); setShowNewTaskModal(true); }}
+                      className="mt-4 w-full py-3 bg-white/40 dark:bg-gray-800/60 hover:bg-white/80 dark:hover:bg-gray-800 border border-white dark:border-gray-700 rounded-xl text-gray-600 dark:text-gray-300 hover:text-brand-text text-sm font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      <Plus size={16} /> Tambah Tugas
+                    </button>
+                  )}
                 </div>
               );
             })}
-            
+
             {/* Interactive Add Status Column Form */}
-            <div className="w-[320px] shrink-0">
+            <div className={`w-[320px] max-w-[88vw] shrink-0 ${filters.group === 'status' ? '' : 'hidden'}`}>
               {showAddColumnForm ? (
                 <form onSubmit={createStatus} className="bg-white/80 backdrop-blur-md rounded-3xl p-5 border border-white shadow-md space-y-4">
                   <h4 className="font-bold text-brand-text text-sm">Tambah Kolom Baru</h4>
@@ -589,7 +848,7 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
               <div className="p-6 overflow-x-auto">
                 <div className="flex gap-4 min-w-[800px] items-start">
                   {workspaceData.statuses.map((status, idx) => {
-                    const items = workspaceData.workItems.filter(i => i.statusId === status.id);
+                    const items = visibleItems.filter(i => i.statusId === status.id);
                     const borderColors = ['border-l-blue-400', 'border-l-yellow-400', 'border-l-purple-400', 'border-l-green-400', 'border-l-gray-400'];
                     const borderClass = borderColors[idx % borderColors.length];
 
@@ -622,21 +881,32 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
                           ) : (
                             items.map(item => {
                               const { points, cleanTitle } = parseStoryPoints(item.title);
+                              const person = assigneeOf(item);
                               return (
-                                <div 
-                                  key={item.id} 
+                                <div
+                                  key={item.id}
                                   draggable
                                   onDragStart={(e) => {
                                     e.dataTransfer.setData("itemId", item.id);
                                     e.dataTransfer.effectAllowed = "move";
                                   }}
                                   onClick={() => setSelectedTask(item)}
-                                  className={`bg-white/95 hover:bg-white p-4 rounded-xl shadow-sm border border-white border-l-4 ${borderClass} text-sm font-medium hover:shadow-md transition-all cursor-grab active:cursor-grabbing hover:-translate-y-0.5`}
+                                  className={`bg-white/95 dark:bg-gray-800 hover:bg-white p-4 rounded-xl shadow-sm border border-white dark:border-gray-700 border-l-4 ${item.isMilestone ? 'border-l-brand-teal' : borderClass} text-sm font-medium hover:shadow-md transition-all cursor-grab active:cursor-grabbing hover:-translate-y-0.5`}
                                 >
-                                  <div className="text-brand-text font-bold leading-snug">{cleanTitle}</div>
-                                  
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="text-brand-text dark:text-gray-100 font-bold leading-snug min-w-0 break-words">{cleanTitle}</div>
+                                    {person && <Avatar name={person.name} color={person.color} size={20} />}
+                                  </div>
+
                                   {item.description && (
-                                    <div className="text-[11px] text-gray-400 font-medium line-clamp-1 mt-1">{item.description}</div>
+                                    <div className="text-[11px] text-gray-400 dark:text-gray-500 font-medium line-clamp-1 mt-1">{item.description}</div>
+                                  )}
+
+                                  {(item.isMilestone || (item.blockedBy && item.blockedBy.length > 0)) && (
+                                    <div className="flex flex-wrap gap-1 mt-1.5">
+                                      {item.isMilestone && renderMilestoneBadge()}
+                                      {renderBlockerChip(item)}
+                                    </div>
                                   )}
 
                                   {renderTaskLabels(item.labels)}
@@ -687,7 +957,7 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
         {activeTab === 'waterfall' && (() => {
           // Calculate timeline boundaries from real data
           const allDates: Date[] = [];
-          workspaceData.workItems.forEach(item => {
+          visibleItems.forEach(item => {
             allDates.push(new Date(item.createdAt));
             if (item.dueDate) allDates.push(new Date(item.dueDate));
           });
@@ -726,11 +996,14 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
             <div className="max-w-6xl mx-auto bg-white/60 backdrop-blur-md border border-white rounded-3xl shadow-sm p-6 md:p-8 overflow-x-auto">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="font-extrabold text-brand-text text-lg">Diagram Gantt — Alur Waterfall</h3>
-                <div className="flex items-center gap-2 text-xs font-bold text-gray-400">
-                  <span className="w-3 h-0.5 bg-red-400 inline-block"></span> Hari ini
+                <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-gray-400">
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-red-400 inline-block"></span> Hari ini</span>
+                  <span className="flex items-center gap-1.5">
+                    <Diamond size={10} className="text-brand-teal" /> {tr(t, 'wsMilestone', 'Milestone')}
+                  </span>
                 </div>
               </div>
-              <div className="min-w-[700px]">
+              <div className="min-w-[700px] relative" ref={ganttRef}>
                 {/* Timeline Header */}
                 <div className="flex border-b-2 border-gray-200 pb-2 mb-2">
                   <div className="w-1/4 shrink-0 font-extrabold text-xs text-gray-500 uppercase tracking-wider">Fase / Status</div>
@@ -749,7 +1022,7 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
                 
                 {/* Phase Rows = Status Columns */}
                 {workspaceData.statuses.map((status, statusIdx) => {
-                  const phaseItems = workspaceData.workItems.filter(i => i.statusId === status.id);
+                  const phaseItems = visibleItems.filter(i => i.statusId === status.id);
                   const color = phaseColors[statusIdx % phaseColors.length];
 
                   return (
@@ -787,17 +1060,30 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
 
                           return (
                             <div key={item.id} className="flex items-center mb-1.5">
-                              <div className="w-1/4 shrink-0 pl-5">
+                              <div className="w-1/4 shrink-0 pl-5 flex items-center gap-1.5">
+                                {item.isMilestone && <Diamond size={10} className="text-brand-teal shrink-0" />}
                                 <span className="text-xs text-gray-500 font-medium truncate block max-w-full">{item.title}</span>
                               </div>
                               <div className="w-3/4 relative h-8 bg-gray-50/30 rounded-lg">
-                                <div 
-                                  onClick={() => setSelectedTask(item)}
-                                  className="absolute top-1 bottom-1 rounded-lg text-white text-[10px] flex items-center px-2.5 font-bold shadow-sm cursor-pointer hover:brightness-110 transition-all hover:scale-y-110 origin-center"
-                                  style={{ left: `${startPct}%`, width: `${widthPct}%`, backgroundColor: color, maxWidth: `${100 - startPct}%` }}
-                                >
-                                  <span className="truncate">{item.title}</span>
-                                </div>
+                                {item.isMilestone ? (
+                                  /* A milestone is a moment, not a duration: draw a diamond at its due date. */
+                                  <div
+                                    ref={(el) => { ganttBarRefs.current[item.id] = el; }}
+                                    onClick={() => setSelectedTask(item)}
+                                    title={item.title}
+                                    className="absolute top-1/2 w-4 h-4 -mt-2 -ml-2 rotate-45 rounded-[3px] shadow-sm cursor-pointer hover:brightness-110 hover:scale-125 transition-all z-[1]"
+                                    style={{ left: `${endPct}%`, backgroundColor: '#009688' }}
+                                  />
+                                ) : (
+                                  <div
+                                    ref={(el) => { ganttBarRefs.current[item.id] = el; }}
+                                    onClick={() => setSelectedTask(item)}
+                                    className="absolute top-1 bottom-1 rounded-lg text-white text-[10px] flex items-center px-2.5 font-bold shadow-sm cursor-pointer hover:brightness-110 transition-all hover:scale-y-110 origin-center z-[1]"
+                                    style={{ left: `${startPct}%`, width: `${widthPct}%`, backgroundColor: color, maxWidth: `${100 - startPct}%` }}
+                                  >
+                                    <span className="truncate">{item.title}</span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           );
@@ -806,6 +1092,23 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
                     </div>
                   );
                 })}
+
+                {/* Faint connectors from every blocker bar to the bar it blocks */}
+                {ganttLinks.length > 0 && (
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none z-[2]" aria-hidden="true">
+                    {ganttLinks.map((l, i) => (
+                      <path
+                        key={i}
+                        d={`M ${l.x1} ${l.y1} H ${l.x1 + Math.max(6, (l.x2 - l.x1) / 2)} V ${l.y2} H ${l.x2}`}
+                        fill="none"
+                        stroke="#94a3b8"
+                        strokeWidth="1"
+                        strokeDasharray="3 3"
+                        opacity="0.6"
+                      />
+                    ))}
+                  </svg>
+                )}
               </div>
             </div>
           );
@@ -818,6 +1121,7 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
                <thead className="bg-white/40 backdrop-blur-md border-b border-white/60">
                  <tr>
                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Judul Tugas</th>
+                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{tr(t, 'wsAssignee', 'Penanggung Jawab')}</th>
                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Prioritas</th>
                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Batas Waktu</th>
@@ -825,28 +1129,46 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
                  </tr>
                </thead>
                <tbody className="bg-white divide-y divide-gray-100">
-                 {workspaceData.workItems.length === 0 ? (
-                   <tr><td colSpan={5} className="px-6 py-8 text-center text-sm text-gray-500">Tidak ada tugas ditemukan. Coba tambahkan dari Tampilan Papan.</td></tr>
+                 {visibleItems.length === 0 ? (
+                   <tr><td colSpan={6} className="px-6 py-8 text-center text-sm text-gray-500">Tidak ada tugas ditemukan. Coba tambahkan dari Tampilan Papan.</td></tr>
                  ) : (
-                   workspaceData.workItems.map(item => {
+                   visibleItems.map(item => {
                      const { points, cleanTitle } = parseStoryPoints(item.title);
+                     const person = assigneeOf(item);
                      return (
-                       <tr 
-                         key={item.id} 
+                       <tr
+                         key={item.id}
                          onClick={() => setSelectedTask(item)}
-                         className="hover:bg-white/60 transition-colors group cursor-pointer"
+                         className={`hover:bg-white/60 transition-colors group cursor-pointer ${item.isMilestone ? 'border-l-4 border-l-brand-teal' : ''}`}
                        >
                          <td className="px-6 py-4 text-sm font-medium text-brand-text">
-                           <div className="flex items-center gap-2">
+                           <div className="flex flex-wrap items-center gap-2">
                              {points && (
                                <span className="bg-brand-orange/15 text-brand-orange text-[10px] font-extrabold px-1.5 py-0.5 rounded shrink-0">
                                  {points} pts
                                </span>
                              )}
                              <span>{cleanTitle}</span>
+                             {item.isMilestone && renderMilestoneBadge()}
+                             {renderBlockerChip(item)}
                            </div>
                            {item.description && <div className="text-xs text-gray-400 mt-1 font-normal line-clamp-1">{item.description}</div>}
                             {renderTaskLabels(item.labels)}
+                            <CustomFieldChips fields={customFieldDefs} values={parseCustomFieldValues(item.customFields)} max={3} />
+                         </td>
+                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {person ? (
+                              <span className="flex items-center gap-2">
+                                <Avatar name={person.name} color={person.color} size={24} />
+                                <span className="font-semibold text-brand-text truncate max-w-[130px]">{person.name}</span>
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-2 text-gray-300">
+                                <span className="w-6 h-6 rounded-full border-2 border-dashed border-gray-200 flex items-center justify-center">
+                                  <UserRound size={11} />
+                                </span>
+                              </span>
+                            )}
                          </td>
                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                             <select 
@@ -1200,6 +1522,17 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
                 </div>
               </div>
 
+              {/* Ketergantungan / Menunggu tugas lain */}
+              <div className="pt-4 border-t border-gray-100">
+                <DependencyEditor
+                  taskId={selectedTask.id}
+                  blockedBy={editTaskBlockedBy}
+                  allItems={workspaceData.workItems}
+                  statuses={workspaceData.statuses}
+                  onChange={(next) => applyBlockedByLocally(selectedTask.id, next)}
+                />
+              </div>
+
               {/* Activity Feed / Riwayat Aktivitas */}
               <div className="space-y-3 pt-4 border-t border-gray-100">
                 <label className="block text-xs font-extrabold text-gray-500 uppercase tracking-wider">Riwayat Aktivitas & Akuntabilitas</label>
@@ -1236,6 +1569,39 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
             <div className="w-full md:w-60 bg-gray-50 rounded-2xl p-5 border border-gray-100 space-y-4 shrink-0 flex flex-col justify-between">
               <div className="space-y-4">
                 <h4 className="font-extrabold text-xs text-gray-500 uppercase tracking-wider pb-2 border-b border-gray-200">Pengaturan Tugas</h4>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">
+                    {tr(t, 'wsAssignee', 'Penanggung Jawab')}
+                  </label>
+                  <AssigneePicker
+                    users={users}
+                    value={editTaskAssigneeId}
+                    onChange={setEditTaskAssigneeId}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">
+                    {tr(t, 'wsMilestone', 'Milestone')}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setEditTaskIsMilestone(v => !v)}
+                    className={`w-full flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-extrabold border-2 border-b-4 transition-all active:translate-y-[2px] active:border-b-2 cursor-pointer ${
+                      editTaskIsMilestone
+                        ? 'bg-brand-teal text-white border-brand-teal/60'
+                        : 'bg-white border-gray-200 text-gray-500 hover:text-brand-text'
+                    }`}
+                  >
+                    <Diamond size={14} className="shrink-0" />
+                    <span className="truncate">
+                      {editTaskIsMilestone
+                        ? tr(t, 'wsIsMilestone', 'Tugas ini milestone')
+                        : tr(t, 'wsMarkMilestone', 'Tandai sebagai milestone')}
+                    </span>
+                  </button>
+                </div>
 
                 <div>
                   <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Status Alur Kerja</label>
@@ -1349,10 +1715,16 @@ export function WorkspaceView({ workspaceId, workspaceName, onDeleteWorkspace, o
                     </div>
                   </div>
                 </div>
+                {/* Kolom kustom milik ruang kerja ini */}
+                <TaskCustomFields
+                  fields={customFieldDefs}
+                  values={editTaskCustomFields}
+                  onChange={setEditTaskCustomFields}
+                />
               </div>
 
               <div className="pt-4 border-t border-gray-200 space-y-2">
-                <button 
+                <button
                   type="submit"
                   className="w-full py-2.5 bg-brand-text hover:bg-black text-white rounded-xl text-xs font-extrabold shadow transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
